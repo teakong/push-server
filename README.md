@@ -3,7 +3,7 @@
 一个 [Agent Skill](https://github.com/vercel-labs/agent-skills)，通过 [一封传话](https://push.phprm.com/mcp.html) 的 `pushServer` MCP 服务器，让 AI 助手（Trae、Claude、Cursor、OpenClaw 等）主动向您汇报任务成果或发送重要通知。
 
 - 纯 MCP 调用，无需脚本与任何运行时依赖。
-- 支持 Markdown 正文与点击跳转链接，推送到您的浏览器、微信等通知通道。
+- 支持 Markdown 正文与点击跳转链接，推送到您的浏览器、飞书、钉钉、企业微信、邮件等通知通道。
 - 内置发送前 URL 反引号清洗规则，保证接收端链接可点、图片不裂。
 
 ## 安装
