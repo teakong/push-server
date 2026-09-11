@@ -51,6 +51,21 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 > ⚠️ 通道码等同推送凭证，请勿提交进代码库或打印到日志。
 
+### 在豆包网页版使用
+
+豆包网页版不支持 `npx skills` 安装技能，但电脑版支持自定义 HTTP 连接器，分两步接入：
+
+1. **添加连接器**：左侧导航「技能·连接器·伙伴」→ 右上角「新建」→「新建自定义连接器」，填写：
+   - 服务器名称：`pushServer`
+   - 传输类型：`HTTP`
+   - 服务器 URL：`https://www.phprm.com/services/push/mcp`
+   - 自定义 Headers：
+     - `X-Push-Channel-Code`：你的 32 位通道码
+     - `X-Mcp-Source`：`doubao`
+2. **新建专属智能体**：创建一个智能体，把 [SKILL.md](SKILL.md) 的正文（去掉开头 `---` frontmatter）粘贴到「人设与回复逻辑/指令」中，并在技能里勾选刚建的 `pushServer` 连接器。之后在该智能体对话中完成任务，它即会按本技能规范主动推送。
+
+> 通道码只填在连接器 Headers 中，不要写进智能体的公开指令。不建智能体也能在对话中直接要求「用 pushServer 推送通知」，但规范遵守不如专属智能体稳定。
+
 ## 用法
 
 安装并配置好 MCP 后，直接让 agent「任务完成后给我推送一条通知」即可。底层调用 `pushServer` MCP 提供的 `send_push_message` 工具：
