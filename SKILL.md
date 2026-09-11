@@ -13,12 +13,33 @@ description: "通过 pushServer MCP 向用户推送消息通知。当需要向�
 - 需要将 Markdown 格式的结果推送到用户的通知通道时。
 
 ## 配置说明 (用户必读)
-使用此技能前，请先在 AI 助手中添加以下远程 MCP 服务器：
-- **名称**: `pushServer`
+**安装 skill ≠ 配置通道**，必须先完成以下两步，否则无法推送：
+
+1. 在 [一封传话](https://push.phprm.com/mcp.html) 注册账号并创建推送通道，获取 32 位通道码。
+2. 在 AI 助手中手动添加远程 MCP 服务器（以 Trae CN 为例：AI 侧边对话框右上角「设置 → MCP → + 添加 → 手动添加」，选择 Streamable HTTP 类型），填入以下 JSON，并把通道码替换为你自己的：
+
+```json
+{
+  "mcpServers": {
+    "pushServer": {
+      "url": "https://www.phprm.com/services/push/mcp",
+      "headers": {
+        "X-Push-Channel-Code": "换成你自己的32位通道码",
+        "X-Mcp-Source": "trae"
+      }
+    }
+  }
+}
+```
+
+字段说明：
+- **名称**: `pushServer`（固定，必须与本技能中调用的服务器名一致）
 - **URL**: `https://www.phprm.com/services/push/mcp`
 - **Headers**:
   - `X-Push-Channel-Code`: `您的32位通道码` (必须配置，否则无法接收推送)
   - `X-Mcp-Source`: `客户端标识` (可选，仅用于服务端日志区分来源，可填 trae、cursor、claude-code 等任意值)
+
+Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加同名 HTTP 服务器即可。配置保存在用户本地客户端，不会进入任何代码仓库。
 
 ## 安全红线（务必遵守）
 - 通道码是推送凭证，只允许配置在 MCP 服务器的 `X-Push-Channel-Code` Header 中；**不得**硬编码进代码、配置文件并提交 git，也不得写入 `head`/`body`/`url` 推送内容。
