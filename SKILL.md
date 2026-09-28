@@ -1,16 +1,17 @@
 ---
 name: "push-skill"
-description: "通过 pushServer MCP 向用户推送消息通知。当需要向用户汇报任务执行结果、里程碑完成情况，或发送 Markdown 格式的重要通知时使用本技能。"
+description: "通过 push-server MCP 向用户推送消息通知或将抓取内容推送至业务服务器。当需要向用户 IM 客户端、浏览器或 webhook API 发送 Markdown/json 格式的重要通知时使用本技能。"
 ---
 
 # Push 消息推送技能
 
-本技能让 AI 通过 `pushServer` MCP 向用户汇报任务成果，或向用户的通知通道发送重要通知。
+本技能让 AI 通过 `push-server` MCP 向用户汇报任务成果，或向用户的通知通道（IM 客户端、浏览器、webhook API）发送重要通知，也可把抓取到的内容以 JSON 推送到用户自己的业务服务器。
 
 ## 何时调用
 - 完成重要的编码任务或里程碑之后。
 - 当用户明确要求发送通知或汇报执行结果时。
 - 需要将 Markdown 格式的结果推送到用户的通知通道时。
+- 需要把抓取/采集到的结构化内容以 JSON 推送到用户自己的服务器（webhook 通道）时。
 
 ## 配置说明 (用户必读)
 **安装 skill ≠ 配置通道**，必须先完成以下两步，否则无法推送：
@@ -21,11 +22,11 @@ description: "通过 pushServer MCP 向用户推送消息通知。当需要向�
 ```json
 {
   "mcpServers": {
-    "pushServer": {
+    "push-server": {
       "url": "https://www.phprm.com/services/push/mcp",
       "headers": {
         "X-Push-Channel-Code": "换成你自己的32位通道码",
-        "X-Mcp-Source": "trae"
+        "X-Mcp-Source": "workbuddy"
       }
     }
   }
@@ -33,7 +34,7 @@ description: "通过 pushServer MCP 向用户推送消息通知。当需要向�
 ```
 
 字段说明：
-- **名称**: `pushServer`（固定，必须与本技能中调用的服务器名一致）
+- **名称**: `push-server`（固定，必须与本技能中调用的服务器名一致）
 - **URL**: `https://www.phprm.com/services/push/mcp`
 - **Headers**:
   - `X-Push-Channel-Code`: `您的32位通道码` (必须配置，否则无法接收推送)
@@ -49,7 +50,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 ## 使用规范
 1. **内容要求**:
    - **标题 (`head`)**: 必填，必须为纯文本，支持 Unicode，长度限制 200 字符以内。
-   - **内容 (`body`)**: (可选) 仅支持 **Markdown** 格式（不支持 HTML，请勿使用 `<br>`、`<table>` 等 HTML 标签），长度限制 50,000 字符以内。
+   - **内容 (`body`)**: (可选) 支持 **Markdown** 或 **JSON 文本**（不支持 HTML，请勿使用 `<br>`、`<table>` 等 HTML 标签）；JSON 文本用于把抓取到的结构化内容推送到 webhook/业务服务器，接收方按原文解析、不做 Markdown 渲染。长度限制 50,000 字符以内。
    - **跳转 (`url`)**: (可选) 如果有相关的网页链接（如 PR 地址、构建日志等），请提供 URL 供用户点击跳转，长度限制 500 字符以内。
    - **指定通道码 (`channelCode`)**: (可选) 覆盖 Header 中的通道码，不指定时将以 Header 中预设的 X-Push-Channel-Code 进行推送。
 
@@ -66,14 +67,14 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
    - 反例（禁止）: 点[「详情」](`https://push.phprm.com/message/x`)、裸写 `https://a.com/x.png` 外层再包一层反引号
    - 正例: 点[「详情」](https://push.phprm.com/message/x)、裸写 https://a.com/x.png
-5. **调用工具**: 必须调用已注册的 `pushServer` MCP 服务器提供的 `send_push_message` 工具（注意：本 skill 本身不是 MCP 服务器，不能把 skill 名称当作 server 调用）：
+5. **调用工具**: 必须调用已注册的 `push-server` MCP 服务器提供的 `send_push_message` 工具（注意：本 skill 本身不是 MCP 服务器，不能把 skill 名称当作 server 调用）：
    - `head`: 任务简述。
-   - `body`: (可选) Markdown 格式的详细汇报。
+   - `body`: (可选) Markdown 或 JSON 文本的详细内容（JSON 文本用于 webhook 推送到业务服务器）。
    - `url`: (可选) 目标链接。
    - `channelCode`: (可选) 指定通道码进行推送，不指定时将以 Header 中预设的 X-Push-Channel-Code 进行推送。
 6. **成功判定与失败处理**:
    - 服务端返回 `{"code":0, ...}` 且包含 `messageIdList` 即表示发送成功。
-   - 若 `pushServer` MCP 不可用（未配置/未连接）或返回非 `code:0`，必须明确告知用户推送失败及原因（如未配置通道码、通道码无效等）；**不得改用 HTTP 直接调用接口，也不得在未收到成功响应时谎称已发送**。
+   - 若 `push-server` MCP 不可用（未配置/未连接）或返回非 `code:0`，必须明确告知用户推送失败及原因（如未配置通道码、通道码无效等）；**不得改用 HTTP 直接调用接口，也不得在未收到成功响应时谎称已发送**。
 
 ## 示例
 **任务汇报（含跳转链接）的工具调用参数：**
@@ -88,6 +89,13 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 ```json
 {
   "head": "构建已完成"
+}
+```
+**抓取内容推送到业务服务器（webhook JSON）：**
+```json
+{
+  "head": "采集结果已就绪",
+  "body": "{\"title\":\"xxx\",\"items\":[{\"id\":1,\"name\":\"示例\"}]}"
 }
 ```
 **成功响应示例：**
