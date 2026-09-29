@@ -1,6 +1,13 @@
 ---
-name: "push-skill"
-description: "通过 push-server MCP 向用户推送消息通知或将抓取内容推送至业务服务器。当需要向用户 IM 客户端、浏览器或 webhook API 发送 Markdown/json 格式的重要通知时使用本技能。"
+name: push-server
+display_name: 一封传话推送
+display_name_en: Aggregated Push
+description: Send push notifications (head + Markdown/JSON body, optional jump link) to users via the push server MCP
+description_zh: 通过 push server MCP 向用户推送消息通知或者将抓取内容推送至业务服务器。当需要向用户IM客户端、浏览器或webhook API发送 Markdown/json 格式的重要通知时使用本技能。（标题 + Markdown/json 正文，可选跳转链接）
+description_en: Push message notifications to users through the push server MCP, or push scraped content to a business server. Use this skill when an important notification in Markdown or JSON format needs to reach the user's IM client, browser, or webhook API. (Head + Markdown/JSON body, optional jump link.)
+category: utilities
+version: 1.0.0
+author: teakong
 ---
 
 # Push 消息推送技能
@@ -25,8 +32,8 @@ description: "通过 push-server MCP 向用户推送消息通知或将抓取内�
     "push-server": {
       "url": "https://www.phprm.com/services/push/mcp",
       "headers": {
-        "X-Push-Channel-Code": "换成你自己的32位通道码",
-        "X-Mcp-Source": "workbuddy"
+        "X-Push-Channel-Code": "${PHPRM_CHANNEL_CODE}",
+        "X-Mcp-Source": "trae"
       }
     }
   }
@@ -37,20 +44,32 @@ description: "通过 push-server MCP 向用户推送消息通知或将抓取内�
 - **名称**: `push-server`（固定，必须与本技能中调用的服务器名一致）
 - **URL**: `https://www.phprm.com/services/push/mcp`
 - **Headers**:
-  - `X-Push-Channel-Code`: `您的32位通道码` (必须配置，否则无法接收推送)
-  - `X-Mcp-Source`: `客户端标识` (可选，仅用于服务端日志区分来源，可填 trae、cursor、claude-code 等任意值)
+    - `X-Push-Channel-Code`: `您的32位通道码` (必须配置，否则无法接收推送)
+    - `X-Mcp-Source`: `客户端标识` (可选，仅用于服务端日志区分来源，可填 trae、workbuddy、coze 等任意值)
 
 Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加同名 HTTP 服务器即可。配置保存在用户本地客户端，不会进入任何代码仓库。
 
+## 执行步骤
+
+1. 确认 ${PHPRM_CHANNEL_CODE}：占位符未解析（header 未生效）且用户没给时，先向用户索取换成你自己的32位通道码，不要猜测、不要用别人的通道码。
+2. 组装 head（≤200，纯文本）与 body（Markdown 或 JSON，≤50000）；有相关链接时附 url（≤500）。
+3. 发送前清洗（强制）：接收端 H5 用 showdown 渲染 body，URL 外层一旦包了反引号，转换后会污染 href/src，导致链接点不动、图片裂图。对 body 和 url 依次执行三条替换：
+    - 链接语法内的反引号去掉：](`URL`) → ](URL)
+    - 裸 URL 外层的反引号去掉：`URL` → URL
+    - url 字段同样去掉外层反引号
+
+   反例：点[「详情」](`https://push.phprm.com/message/x`)；正例：点[「详情」](https://push.phprm.com/message/x)。反引号只用于文件名、命令、代码标识等非 URL 内容。
+
 ## 安全红线（务必遵守）
-- 通道码是推送凭证，只允许配置在 MCP 服务器的 `X-Push-Channel-Code` Header 中；**不得**硬编码进代码、配置文件并提交 git，也不得写入 `head`/`body`/`url` 推送内容。
-- 推送内容中**禁止**包含密码、token、私钥、Cookie、完整环境变量等敏感信息原文；如需提及，只做脱敏描述（如「令牌已刷新」而非令牌值）。
-- `channelCode` 只能填写用户本人提供的通道码，禁止向其他通道发送消息；不确定时不填，使用 Header 预设值。
+
+- 通道码即推送凭证：只允许出现在 MCP header 或调用参数里，不得硬编码进代码/配置并提交 git，也不得写进 head/body/url。
+- 推送内容中禁止出现密码、token、私钥、Cookie、完整环境变量等敏感信息原文；需要提及时只做脱敏描述（如「令牌已刷新」而不是令牌值）。
+- 只能使用用户本人提供的通道码，禁止向其他通道发送。
 
 ## 使用规范
 1. **内容要求**:
    - **标题 (`head`)**: 必填，必须为纯文本，支持 Unicode，长度限制 200 字符以内。
-   - **内容 (`body`)**: (可选) 支持 **Markdown** 或 **JSON 文本**（不支持 HTML，请勿使用 `<br>`、`<table>` 等 HTML 标签）；JSON 文本用于把抓取到的结构化内容推送到 webhook/业务服务器，接收方按原文解析、不做 Markdown 渲染。长度限制 50,000 字符以内。
+   - **内容 (`body`)**: (可选) 支持 **Markdown/JSON**（不支持 HTML，请勿使用 `<br>`、`<table>` 等 HTML 标签）；JSON 用于把抓取到的结构化内容推送到 webhook/业务服务器，接收方按原文解析、不做 Markdown 渲染。长度限制 50,000 字符以内。
    - **跳转 (`url`)**: (可选) 如果有相关的网页链接（如 PR 地址、构建日志等），请提供 URL 供用户点击跳转，长度限制 500 字符以内。
    - **指定通道码 (`channelCode`)**: (可选) 覆盖 Header 中的通道码，不指定时将以 Header 中预设的 X-Push-Channel-Code 进行推送。
 
@@ -69,7 +88,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
    - 正例: 点[「详情」](https://push.phprm.com/message/x)、裸写 https://a.com/x.png
 5. **调用工具**: 必须调用已注册的 `push-server` MCP 服务器提供的 `send_push_message` 工具（注意：本 skill 本身不是 MCP 服务器，不能把 skill 名称当作 server 调用）：
    - `head`: 任务简述。
-   - `body`: (可选) Markdown 或 JSON 文本的详细内容（JSON 文本用于 webhook 推送到业务服务器）。
+   - `body`: (可选) Markdown/JSON 的详细内容（JSON 用于 webhook 推送到业务服务器）。
    - `url`: (可选) 目标链接。
    - `channelCode`: (可选) 指定通道码进行推送，不指定时将以 Header 中预设的 X-Push-Channel-Code 进行推送。
 6. **成功判定与失败处理**:

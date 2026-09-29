@@ -1,6 +1,6 @@
 # push-skill
 
-一个 [Agent Skill](https://github.com/vercel-labs/agent-skills)，通过 [一封传话](https://push.phprm.com/mcp.html) 的 `push-server` MCP 服务器，让 AI 助手（Trae、Claude、Cursor、OpenClaw 等）主动向您汇报任务成果或发送重要通知。
+一个 [Agent Skill](https://github.com/vercel-labs/agent-skills)，通过 [一封传话](https://push.phprm.com/mcp.html) 的 `push-server` MCP 服务器，让 AI 助手（Trae、Claude、Workbuddy、OpenClaw 等）主动向您汇报任务成果或发送重要通知。
 
 - 纯 MCP 调用，无需脚本与任何运行时依赖。
 - 支持 Markdown 正文与点击跳转链接，推送到您的浏览器、飞书、钉钉、企业微信、邮件等通知通道。
@@ -74,7 +74,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `head` | 是 | 消息标题，纯文本，200 字符以内 |
-| `body` | 否 | 正文，支持 Markdown 或 JSON 文本（不支持 HTML），50,000 字符以内；JSON 文本用于 Webhook 通道推送，接收端按原文解析 |
+| `body` | 否 | 正文，支持 Markdown/JSON（不支持 HTML），50,000 字符以内；JSON 用于 Webhook 通道推送，接收端按原文解析 |
 | `url` | 否 | 点击跳转链接（如 PR 地址、构建日志），500 字符以内 |
 | `channelCode` | 否 | 指定通道码，覆盖 Header 中的 `X-Push-Channel-Code` |
 
