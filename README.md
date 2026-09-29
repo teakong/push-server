@@ -1,4 +1,4 @@
-# push-skill
+# push-server
 
 一个 [Agent Skill](https://github.com/vercel-labs/agent-skills)，通过 [一封传话](https://push.phprm.com/mcp.html) 的 `push-server` MCP 服务器，让 AI 助手（Trae、Claude、Workbuddy、OpenClaw 等）主动向您汇报任务成果或发送重要通知。
 
@@ -13,10 +13,10 @@
 
 ```bash
 # 安装到当前项目
-npx skills add teakong/push-skill
+npx skills add teakong/push-server
 
 # 或安装到全局（所有 agent 可用）
-npx skills add teakong/push-skill -g
+npx skills add teakong/push-server -g
 ```
 
 ## 配置
