@@ -12,7 +12,7 @@ description: Send push notifications to users via the push server MCP, push one 
 description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码），并可用 OAuth2 HTTP 接口查询历史消息。当需要向用户IM客户端、浏览器或webhook API发送 Markdown/json 格式的重要通知、批量采集需要按来源逐条推送、或需要拉取/查看已推送消息时使用本技能。（标题 + Markdown/json 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
 description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, and read back message history over OAuth2 HTTP APIs. Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, or when past pushed messages need to be listed or opened. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
 category: utilities
-version: 1.5.0
+version: 1.5.1
 author: teakong
 ---
 
