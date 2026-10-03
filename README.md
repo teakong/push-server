@@ -3,9 +3,9 @@
 一个 [Agent Skill](https://github.com/vercel-labs/agent-skills)，通过 [一封传话](https://push.phprm.com/mcp.html) 的 `push-server` MCP 服务器，让 AI 助手（Trae、Claude、Workbuddy、OpenClaw 等）主动向您汇报任务成果或发送重要通知。
 
 - 纯 MCP 调用，无需脚本与任何运行时依赖。
-- 支持 Markdown 正文与点击跳转链接，推送到您的浏览器、IM 客户端、Webhook 等通知通道。
-- 支持 `send_multi_message` 一次调用推送多条消息（1~32 条，每条可指定自己的通道码），适合群发与多步骤汇报。
-- 支持 `body` 传 JSON：把 AI 采集到的内容序列化成 JSON 文本放进 `body`，经 Webhook 类型的通道原样转发到您自己的业务服务接口（自建接收端），不参与 Markdown 渲染。
+- **支持把采集结果结构化入库（商业链路）**：`body` 可直接传 JSON，经 Webhook 类型通道**原样转发**到您自己的业务接收端（不参与 Markdown 渲染），落地成商品库、线索库、工单、时序指标等真实数据。AI 负责采集清洗、push-server 负责投递、您的服务端负责入库。
+- 支持 Markdown 正文与点击跳转链接，推送到您的浏览器、IM 客户端、邮件等通知通道。
+- 支持 `send_multi_message` 一次调用推送多条消息（1~32 条，每条可指定自己的通道码），适合**批量采集**与多步骤汇报。
 - 支持查询已推送消息：先用 `get_access_token` 换短期令牌，再调用 `/oauth2/push/message/*` 查分页与详情。
 - 支持通道管理：用同一令牌调用 `/oauth2/push/channel/*`，查看下属通道列表、管理成员、**新增/修改/删除/重置通道**（`channel/edit` 可用 `status` 传 `1` 启用 / `0` 停用）；**相同类型（`pushType`）的通道只建一条、够用就复用**，不要把同一类推送拆成多条。成员侧只开放 1 个接口（改昵称），其余成员功能（删除成员、成员列表分页、拉黑/恢复、邀请加入、批量处理）请在官网控制台完成。
 - 内置发送前 URL 反引号清洗规则，保证接收端链接可点、图片不裂。
@@ -68,6 +68,8 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 通道码不能当 Bearer 用，`access_token` 也不能拿去推送。
 
+`access_token` 默认有效期 **7200 秒（2 小时）**，以返回的 `expires_in` 为准。同一张令牌可以在本次任务里连续调用多个业务接口（9 个 `/oauth2/push/*` 都认它），重复调用 `get_access_token` 也不会顶掉旧的 —— 所以一轮任务只在开头取一次即可，不必每个接口前都换。它属于会话级凭证，不要持久化。它的本体是一段 RS256 签名的 JWT（`eyJ` 开头的三段式），不是 `sk-` 之类的前缀串，当不透明字符串用即可。
+
 ### 在豆包网页版使用
 
 豆包网页版不支持 `npx skills` 安装技能，但电脑版支持自定义 HTTP 连接器，分两步接入：
@@ -91,7 +93,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 |------|------|
 | `send_push_message` | 推送一条消息，绝大多数场景用它 |
 | `send_multi_message` | 一次调用推送多条（1~32），每条可指定自己的通道码 |
-| `get_access_token` | 用通道码换短期 `access_token`，供 `/oauth2/push/*` 业务接口使用 |
+| `get_access_token` | 用通道码换短期 `access_token`，供 `/oauth2/push/*` 业务接口使用；返回里有 `expires_in`（默认 7200 秒） |
 
 > 三个工具的 `channelCode` 在远端 schema 里都标了必填，但服务端允许 Header 已预置时省略：Header 未配置时必须显式传；Header 已配置、客户端却仍报缺参时，把同一串通道码显式填进 `channelCode` 即可（值与 Header 一致，不要改配置或换工具）。
 
@@ -99,12 +101,14 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
-| `head` | 是 | 消息标题，纯文本，200 字符以内 |
-| `body` | 否 | 正文，支持 Markdown/JSON（不支持 HTML），50,000 字符以内；JSON 用于 Webhook 通道推送，接收端按原文解析 |
+| `head` | 是 | 消息标题，纯文本，200 字符以内；人读消息建议前置一个结论 emoji（见「用 emoji 提升可读性」） |
+| `body` | 否 | 正文，支持 **Markdown / 纯文本 / JSON**（不支持 HTML），50,000 字符以内；内容为字符串原文转发。JSON 用于 Webhook 通道推送，接收端按原文解析（详见 SKILL.md「工具参数」） |
 | `url` | 否 | 点击跳转链接（如 PR 地址、构建日志），500 字符以内 |
 | `channelCode` | 条件必填 | 指定通道码，覆盖 Header 中的 `X-Push-Channel-Code`；Header 预置时服务端可省，但远端 schema 标了必填（见下方提示） |
 
-**一次推送多条 —— `send_multi_message`**
+**批量采集时一次推送多条 —— `send_multi_message`**
+
+> 只在三种情况用：**用户明确要求分开推**、**批量采集**（每个来源一条）、**发到不同通道**。用户要「表格 / 报告」时一律走单条 + Markdown 表格。
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
@@ -115,18 +119,31 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 多条并发推送，**任一条失败则整次调用失败**并返回第一条失败原因；超过 32 条需拆成多次调用。
 
-**换取令牌 —— `get_access_token`**
+**换取令牌—— `get_access_token`**
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `channelCode` | 条件必填 | 要换令牌的通道码；不传则取 Header `X-Push-Channel-Code`（schema 同样标了必填） |
 | `scope` | 否 | 必须是该通道客户端已登记 scope 的子集；不传则使用服务端默认值 `basic` |
 
+**先看这条消息给谁。** 第一类是结构化数据落到你自己的业务系统（商业入库链路），第二类是给人看的通知。
+
+采集内容落到业务服务（Webhook 通道，`body` 为 JSON 文本，**不加 emoji**）：
+
+```json
+{
+  "head": "采集批次 2026-10-03T10:32",
+  "body": "{\"batchId\":\"20261003-1032\",\"source\":\"shop.example.com/new\",\"collectedAt\":\"2026-10-03T10:32+08:00\",\"total\":48,\"items\":[{\"sku\":\"SKU1001\",\"name\":\"降噪耳机\",\"price\":899,\"stock\":132},{\"sku\":\"SKU1002\",\"name\":\"机械键盘\",\"price\":459,\"stock\":3}]}"
+}
+```
+
+`head` 也是纯文本（接收端常拿它当批次号或去重键入库），`body` 必须是裸 JSON、不能包 Markdown 围栏。多源批量入库、线索入库、监控与舆情批次的完整写法见 [references/example.md](references/example.md) 第 1 节。
+
 简单任务可以只提供 `head`：
 
 ```json
 {
-  "head": "构建已完成"
+  "head": "🎉 构建已完成"
 }
 ```
 
@@ -134,32 +151,33 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 ```json
 {
-  "head": "代码优化完成",
-  "body": "**优化清单**\n- **性能**: 减少了冗余的会话查找\n- **稳定性**: 增加了异常捕获",
+  "head": "🎉 代码优化完成",
+  "body": "## ✅ 优化清单\n- ✅ **性能**：减少冗余会话查找，P95 下降 38%\n- ✅ **稳定性**：补充异常捕获与重试\n- ⚠️ **兼容性**：旧版客户端需灰度验证",
   "url": "https://example.com/pr/123"
 }
 ```
 
-采集内容推送到业务服务（Webhook 通道，`body` 为 JSON 文本）：
-
-```json
-{
-  "head": "采集结果已就绪",
-  "body": "{\"title\":\"xxx\",\"items\":[{\"id\":1,\"name\":\"示例\"}]}"
-}
-```
-
-一次推送多条（不同内容 / 不同通道）：
+一次推送多条（批量采集 / 不同通道）：
 
 ```json
 {
   "channelCode": "换成你自己的32位通道码",
   "messages": [
-    { "head": "构建已完成", "body": "主分支构建 #128 通过", "url": "https://example.com/build/128" },
-    { "head": "部署已开始", "body": "预发环境正在部署", "channelCode": "换成你自己的另一个32位通道码" }
+    { "head": "🎉 构建已完成", "body": "- ✅ 主分支构建 #128 通过\n- 🟢 耗时 3m12s", "url": "https://example.com/build/128" },
+    { "head": "⏳ 部署已开始", "body": "预发环境正在部署，预计 5 分钟", "channelCode": "换成你自己的另一个32位通道码" }
   ]
 }
 ```
+
+### 用 emoji 提升可读性
+
+通知栏里纯文本是一片灰，扫读成本高。给人看的消息（Markdown `body` 或不传 `body`）建议：
+
+- `head` 前置**一个**结论 emoji，格式 `<emoji> + 空格 + 结论`，如 `🎉 构建已完成`、`💣 构建失败：单测未通过 3 项`、`⚠️ 磁盘剩余不足 10%`、`🚀 v2.4.0 已发布`、`📥 采集完成：128 页`。
+- `body` 用**状态灯**表达程度（🟢 健康 / 🟡 警戒 / 🔴 危险），用**结果符**表达判定（✅ 通过 / ❌ 失败 / ⚠️ 有风险但不阻塞），如 `- 🟢 响应 120ms`、`## ❌ 失败项`。
+- **Webhook / JSON 通道一律不加 emoji**——`body` 是数据结构不是文档，emoji 会污染字段值。
+
+完整映射表、补充 emoji 与红线见 [SKILL.md](SKILL.md) 的「内容排版：emoji 可读化」。
 
 ## 回查已推送的消息
 
@@ -202,10 +220,15 @@ curl -s https://www.phprm.com/services/public/ping
 
 ## 工作原理
 
-1. Agent 完成任务后，按 [SKILL.md](SKILL.md) 规范将成果总结为 `head` / Markdown `body`；多条内容改用 `send_multi_message`。
-2. 发送前对每条消息的 `body`、`url` 执行 URL 反引号清洗，避免接收端 showdown 转换后链接失效。
-3. 通过 MCP 协议调用 `send_push_message` / `send_multi_message`，由一封传话服务端投递到通道。
-4. 服务端返回 `{"code":0, ...}` 且包含 `messageIdList` 即发送成功（多条时是所有消息 ID 的并集）；非 `code:0` 时 Agent 必须如实告知失败原因，不得降级为 HTTP 直调推送或谎报成功。
+1. Agent 完成任务后，按 [SKILL.md](SKILL.md) 规范将成果总结为 `head` / Markdown `body`。
+2. 组装文案时可参考 [references/example.md](references/example.md)：第 1 类是**结构化数据入库**（Webhook JSON，零 emoji，商业链路主力）；第 2~12 节是 11 类人读场景（签到 / 采集 / 监控告警 / 备份 / CI / 表格报告与批量采集 / 订单物流 / 行情账单 / 快递出行天气 / 安全事件 / 日报周报），第 13 节是反例对照，每类含成功、失败、告警三种分支写法，照骨架改即可。
+3. 发送前对每条消息的 `body`、`url` 执行 URL 反引号清洗，避免接收端 showdown 转换后链接失效。
+4. 通过 MCP 协议调用 `send_push_message` / `send_multi_message`，由一封传话服务端投递到通道。
+5. 服务端返回 `{"code":0, ...}` 且包含 `messageIdList` 即发送成功（多条时是所有消息 ID 的并集）；非 `code:0` 时 Agent 必须如实告知失败原因，不得降级为 HTTP 直调推送或谎报成功。
+
+> **你的偏好优先。** 上面所有规范都只是缺省基线——emoji 用法、单条还是多条、要不要表格、标题怎么写。直接告诉 Agent 你的偏好即可，例如「不要 emoji」「就要表格」「分开推送」「标题别加表情」，与之冲突的缺省规则自动让位，其余没提到的部分按缺省走。
+>
+> 默认情况下 Agent **推单条**；只有三种情况会用 `send_multi_message`：**批量采集**、**跨通道发送**、**你明确要求分开推送**。而你要表格 / 报告时不会被拆成多条。
 
 ## License
 

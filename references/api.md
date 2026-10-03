@@ -22,26 +22,26 @@
 
 - **参数只能走 query 或 `application/x-www-form-urlencoded`**，`application/json` 的 body 会被完全忽略，表现就是「XXX 参数缺失或非法」。
 - `page` / `limit` 缺省或 `<=0` 时回落 `1` / `10`；文本参数（`nickname`）空白串按缺失处理。
-- 所有错误都是 **HTTP 200 + 非 0 业务码**，不要用 HTTP 状态码判成功；`401/403` 才是认证侧，token 过期重新 `get_access_token` 即可。
+- 所有错误都是 **HTTP 200 + 非 0 业务码**，不要用 HTTP 状态码判成功；`401/403` 才是认证侧，令牌过期重新 `get_access_token` 即可。
 
 ## 1. 鉴权总则
 
-| 凭证 | 发放方 | 用在哪 | 有效期 |
-|---|---|---|---|
-| 32 位通道码 | 一封传话控制台 | MCP 工具 Header `X-Push-Channel-Code` | 长期，仅重置后需替换 |
-| `access_token` | MCP `get_access_token` | `Authorization: Bearer` 访问 `/oauth2/push/*` | 短期（分钟级），过期重取 |
+| 凭证 | 发放方 | 用在哪 | 有效期          |
+|---|---|---|--------------|
+| 32 位通道码 | 一封传话控制台 | MCP 工具 Header `X-Push-Channel-Code` | 长期，仅重置后需替换   |
+| `access_token` | MCP `get_access_token` | `Authorization: Bearer` 访问 `/oauth2/push/*` | **默认 7200 秒（2 小时）**，以返回的 `expires_in` 为准 |
 
-两种凭证严格分离：**通道码不能放进 `Authorization` 头，token 也不能用于 MCP 推送。**
+两种凭证严格分离：**通道码不能放进 `Authorization` 头，令牌也不能用于 MCP 推送。**
 
 下文 curl 用 `${CHANNEL_ACCESS_TOKEN}` 代指 `access_token`。
 
-## 2. 获取 access_token（MCP `get_access_token`）
+## 2. 获取令牌（MCP `get_access_token`）
 
-用户话术示例：「帮我取一个 push-server 的 access_token」「我要查通道列表，先换个令牌」「令牌好像过期了，重新拿一个」——凡是后面要调 `/oauth2/push/*`，都先走这一步。
+用户话术示例：「帮我取一个 push-server 的令牌」「我要查通道列表，先换个令牌」「令牌好像过期了，重新拿一个」——凡是后面要调 `/oauth2/push/*`，都先走这一步。
 
 | 参数 | 必填 | 说明 |
 |---|---|---|
-| `scope` | 否 | 该调用申请的 scope，必须是通道客户端**已登记 scope 的子集**，否则返回错误并列出可用范围；不传则使用服务端默认值 `basic` |
+| `scope` | 否 | 该调用申请的 scope，必须是**该通道已登记范围的子集**，超出会返回错误并列出可用范围；不传则使用服务端默认值 `basic` |
 | `channelCode` | 否 | 未预置 Header 时必填 |
 
 成功响应：
@@ -51,15 +51,33 @@
   "code": 0,
   "message": "success",
   "data": {
-    "access_token": "sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "access_token": "eyJhbGciOiJSUzI1NiJ9.SIGNATURE_PART_OMITTED",
     "token_type": "Bearer",
-    "expires_in": 300,
+    "expires_in": 7200,
     "scope": "basic"
   }
 }
 ```
 
-取到 `access_token` 后立刻使用，**不要跨会话缓存复用**。401/失效时重新调用一次本工具再重试原请求即可。
+#### 令牌长什么样
+
+`access_token` 是一段标准 JWT（`header.payload.signature` 三段式，以 `eyJ` 开头）。两条用得上的结论：
+
+- 中段 payload 可以**直接解开**（base64url 解码，不需要密钥），里面有过期时间。想知道还剩多久，解它比自己记时间更准。
+- 反过来，**不要拿前缀、长度或是不是 `eyJ` 开头去判断它合不合法**，也不用自己验签——原样塞进 `Authorization` 头即可。具体格式属于服务端实现细节，随时可能调整。
+
+### 复用规则（省掉大量往返的关键）
+
+`access_token` 签发后即**自包含**，业务接口本地就能校验，不需要每次回源。由此推出四条：
+
+1. **一张令牌可以连打多个接口**。9 个 `/oauth2/push/*` 都只按 `Authorization` 认它，不区分接口。一轮「取令牌 → 查分页 → 查详情 → 改通道」的任务，**开头取一次就够**。
+2. **重复获取不会顶掉旧的**。每次调用 `get_access_token` 都是独立签发，多次调用互不影响，不存在「取了新的，旧的立刻失效」。
+3. **按 `expires_in` 倒计时**，别按固定经验值。默认 7200 秒，留 60~120 秒余量再重取即可。这个值可以在控制台改（有效区间 600~7200 秒），所以**以本次返回的为准**。
+4. **不要写进文件 / 长期记忆**：属于会话级凭证，跨会话留着用只会换来难以定位的 401。
+
+令牌本体不外泄，也不要出现在推送内容或日志里（见 SKILL.md 安全红线）。401/403 才需要重取；业务错误（`code` 非 0）与令牌无关。
+
+> 注意 `access_token不正确请重新获取` 这条文案是个**误导源**：它在「令牌主体不是挂在父通道下的浏览器子通道」时同样会出现，此时重取多少次都一样。判定是不是真过期，看 HTTP 状态码 401/403，而不是看这句文案。
 
 ## 3. 连通性自检（匿名）
 
@@ -75,11 +93,13 @@ curl -s https://www.phprm.com/services/public/ping
 {
   "code": 0,
   "message": "ok",
+  "trace": "6f4d1f41d43c4c1e8d2e15a4f8c85d70",
   "data": {
     "status": "alive",
     "service": "push-server",
     "rows": [
       {
+        "channelId": "1304170050458501120",
         "channelName": "测试通道",
         "pushType": 1,
         "pushTypeName": "website",
@@ -94,8 +114,11 @@ curl -s https://www.phprm.com/services/public/ping
 
 | 字段 | 说明 |
 |---|---|
+| `code` / `message` | 固定 `0` / `ok` |
+| `trace` | 本次请求的追踪 ID，排查时把它报给服务端即可，无需解析 |
 | `data.status` / `data.service` | 固定 `alive` / `push-server` |
-| `data.rows[]` | **服务端预置的公开示例通道**，字段与 5.1 的 `rows[]` 对齐（只保留必要字段）；服务端逐个回查数据库，**只保留仍存在且 `status=1`（已启用）**的通道，列表可能为空 |
+| `data.rows[].channelId` | 通道自增 ID，`rows[]` 一定会带这个字段（注意别和 `channelCode` 搞混：前者是内部 ID，后者才是推送凭证） |
+| `data.rows[]` | **服务端预置的公开示例通道**，字段与 5.1 的 `rows[]` 对齐（只保留必要字段）；列表中只保留**当前仍然可用**的通道，内容可能随时间变化，也可能为空 |
 
 ⚠️ 通道码即推送凭证，而 `rows[].channelCode` 是**匿名可得**的示范码：任何拿到它的人都能往这些通道推送。因此它们只能用于「用户同意后的链路自测」，绝不能当作某个用户自己的通道，更不要写进 `${PHPRM_CHANNEL_CODE}`。
 
@@ -106,18 +129,18 @@ curl -s https://www.phprm.com/services/public/ping
 |---|---|---|
 | ping 返回 alive | 端点活着 | 问题在凭证/配置：核对通道码是否替换、`X-Push-Channel-Code` 名称是否写对、MCP 传输类型是否为 Streamable HTTP |
 | ping 失败（连接层错误/超时） | 端点或网络异常 | 核对 URL、出网连通性、是否被代理拦截 |
-| ping 和 MCP 都连不上 | 两者同源（同一个 bff，同一层 nginx） | 按上面「ping 失败」处理，不要再逐个重试工具 |
+| ping 和 MCP 都连不上 | 两者同源，共用同一层网关与后端 | 按上面「ping 失败」处理，不要再逐个重试工具 |
 | 端点正常但客户端显示 MCP 未连接 | 客户端配置问题 | 核对客户端配置根键（`mcpServers` / `servers` 等）与自定义 Header 写法 |
 
-这里的 ping 是**匿名 HTTP 端点**，和 MCP 的 JSON-RPC `ping` 方法不是一回事（后者同样需要 `X-Push-Channel-Code`）。本 skill 没有 `connectivity_check` 这个工具。
+这里的 ping 是**匿名 HTTP 端点**，和 MCP 的 JSON-RPC `ping` 方法不是一回事（后者同样需要 `X-Push-Channel-Code`）。
 
 ## 4. 消息查询 API
 
-需要鉴权：`Authorization: Bearer ${CHANNEL_ACCESS_TOKEN}`（`client_credentials` 令牌）。以下接口只能读取**当前 token 所属通道**的消息。
+需要鉴权：`Authorization: Bearer ${CHANNEL_ACCESS_TOKEN}`（`client_credentials` 令牌）。以下接口只能读取**当前令牌所属通道**的消息。
 
 ### 4.1 消息分页
 
-用户话术示例：「查一下最近推过哪些消息」「把近 5 条推送记录列出来」「看看第 2 页的历史通知」「那条告警消息推成功了吗，帮我查一下记录」。
+用户话术示例：「查一下最近推过哪些消息」「把近 5 条推送记录列出来」「那条告警消息推成功了吗，帮我查一下记录」。
 
 | 名称 | 位置 | 必填 | 说明 |
 |---|---|---|---|
@@ -144,8 +167,8 @@ curl --location "https://www.phprm.com/oauth2/push/message/page?page=2&limit=5" 
     "rows": [
       {
         "messageId": "1687512996693323778",
-        "title": "DSH 推送通道已恢复",
-        "content": "来自 DeepSeek Harness 的测试推送（服务端修复后的验证）。",
+        "title": "DSH 推送",
+        "content": "来自 DeepSeek Harness。",
         "notifyTime": "2026-10-01 15:34:10",
         "nickname": "哈哈",
         "messageUrl": "https://push.phprm.com/message/view.html?t=1687512996693323778&i=65686790&m=e0b91f6b6360a220"
@@ -194,8 +217,8 @@ curl --location "https://www.phprm.com/oauth2/push/message/detail?messageId=1687
   "message": "请求成功",
   "data": {
     "channelName": "多个推送通道",
-    "title": "DSH 推送通道已接通",
-    "content": "来自 DeepSeek Harness 的测试推送。",
+    "title": "DSH 推送",
+    "content": "来自 DeepSeek Harness",
     "notifyTime": "2026-10-01 14:54:22",
     "messageUrl": "https://push.phprm.com/message/view.html?t=1687502979776819203&i=65673969&m=ffead72facb170d3",
     "viewCount": 3
@@ -217,7 +240,7 @@ curl --location "https://www.phprm.com/oauth2/push/message/detail?messageId=1687
 - **成员 ID（`channelMemberRelId`）只有一个来源**：5.1 通道列表 `data.rows[].channelMemberRelId`，即该子通道**创建人**的成员记录。只有 `pushType=1`（浏览器）的子通道行带这个值，其它类型子通道该字段为空；**没有成员分页接口可再查其它成员**，值为空就等于这个成员无法通过接口操作，**无论如何都不要自己拼 ID**。
 - **目标通道用 `channelCode`（32 位）定位，只能取自通道列表返回的 `channelCode`**；长度不是 32 位一律返回「channelCode 参数缺失或非法」，**不要自己拼**。
 - 「同组」= 目标通道与当前凭证通道的父通道（`pid`）相同；越组会返回业务错误码并提示「只能……同组通道」。
-- **删除与重置对当前通道的限制不一样**（已逐行核对 `ChannelController`）：
+- **删除与重置对当前通道的限制不一样**：
 
   | 操作 | 是否真的按入参 `channelCode` 做识别 | 能否作用于当前凭证绑定的通道 |
   |---|---|---|
@@ -298,7 +321,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 | `data.rows[].channelCode` | 该子通道的 32 位通道码：可直接当 MCP 凭证用、**是「当前通道怎么找」的比对依据**、也是 5.3/5.4/5.5 定位目标通道的唯一入参 |
 | `data.rows[].webhookUrl` | webhook 通道的接收地址，非 webhook 类型为空 |
 | `data.rows[].memberCount` / `status` | 成员数 / 通道状态（`1` 已启用 / `0` 未启用，见 5.8） |
-| `data.rows[].channelMemberRelId` | **该子通道创建人的成员 ID**，`userId` / `nickname` 同属这条成员记录；**成员接口入参的唯一来源**，可直接作为 5.6 的入参。**仅 `pushType=1`（浏览器）的子通道有值**，其余为 `null`（顶层 `data` 不带成员字段，也没有成员分页接口可查其它人） |
+| `data.rows[].channelMemberRelId` | **该子通道创建人的成员 ID**，`nickname` 同属这条成员记录；**成员接口入参的唯一来源**，可直接作为 5.6 的入参。**仅 `pushType=1`（浏览器）的子通道有值**，其余为 `null`（顶层 `data` 不带成员字段，也没有成员分页接口可查其它人） |
 
 #### 通道码的层级与含义
 
@@ -309,7 +332,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 | 组合父通道 | 在**顶层 `data`**，不在 `rows` 里 |
 | 浏览器子通道 | 在 `data.rows[]` 里 |
 
-指定组合通道channelCode参数推送一次将自动给所有的子通道全部都推送一次，指定某个子通道码进行推送时只会推送到这个类型的子通道。
+指定组合通道channelCode参数推送一次将自动给所有的子通道全部都推送一次，指定某个子通道码进行推送时只会推送到这个子通道。
 
 ### 5.2 新增通道
 
@@ -325,7 +348,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 | `pushType` | 是 | 推送类型编码，见 5.7 |
 | `webhookUrl` | 否 | 接收地址。`webhook推送`、`企业微信/钉钉/飞书群机器人`、`BARK` 这几类必须是合法 URL；浏览器、组合、官方邮件可留空 |
 
-新通道的归属由服务端按当前 token 决定，**不要预先断言它挂在谁下面**（复制的是父通道码还是子通道码、有没有浏览器子通道，结果都不一样）。创建后用 5.1 复核它实际出现在哪一层，取它的 `channelCode` 再往下操作。
+新通道的归属由服务端按当前令牌决定，**不要预先断言它挂在谁下面**（复制的是父通道码还是子通道码、有没有浏览器子通道，结果都不一样）。创建后用 5.1 复核它实际出现在哪一层，取它的 `channelCode` 再往下操作。
 
 ```bash
 curl --location --request POST "https://www.phprm.com/oauth2/push/channel/add" \
@@ -349,11 +372,8 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/add" \
     "channelCode": "33333333333333333333333333cccccc",
     "createTime": "2026-10-01 15:40:02",
     "webhookUrl": "https://example.com/hook/push",
-    "memberCount": null,
     "status": 1,
-    "channelMemberRelId": null,
-    "userId": 831289282843013,
-    "nickname": null
+    "userId": "2699080"
   }
 }
 ```
@@ -406,11 +426,11 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/edit" 
   --data-urlencode "status=1"
 ```
 
-关于 `status` 的四条（都对着 `MsgChannelComponent.editChannel` 核过）：
+关于 `status` 的四条约定：
 
-- **`status` 传非数字会直接抛解析异常**（`Integer.parseInt`），不是业务错误码——所以别传空串、`true` 之类的值。
+- **`status` 只能传数字**（`0` / `1`）。传空串、`true` 之类的非数字值不会得到业务错误码，而是服务端异常——遇到这种情况改参数，不要重试。
 - **停用当前正在用的通道 = 自断推送**：未启用（`0`）的通道在推送侧直接返回「通道未开启」，而服务端**不阻止**你停用自己（对「当前通道」的保护只有删除那一处）。改状态前先按 5.1「当前通道怎么找」确认目标不是当前通道；恢复就是再传一次 `status=1`。
-- 另外两种会自动改写状态的情况，不必手动处理：数据库里是「已暂停」时本次修改会把它拉回已启用；已停用的通道不能再被禁用（会返回未授权错误）。
+- 另有两种服务端会自动处理状态的情况，不必手动干预：处于暂停态的通道在修改后会被拉回已启用；已经停用的通道再次停用会返回未授权。
 
 ### 5.4 删除非当前通道
 
@@ -551,7 +571,7 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/member
 
 | 用户的话 | 命中 | 动作 |
 |---|---|---|
-| 「推送到 4d05f4abdb0a0c2a0269900809946903」 | 步骤 1（32 位码，且不是默认码） | 直接把它作为 `channelCode` 推送，**不取 token、不查列表** |
+| 「推送到 4d05f4abdb0a0c2a0269900809946903」 | 步骤 1（32 位码，且不是默认码） | 直接把它作为 `channelCode` 推送，**不取令牌、不查列表** |
 | 「推送到浏览器通道」 | 步骤 3（`pushTypeDesc` = 浏览器） | `pushTypeName=website` 查列表，取 `rows[].channelCode` |
 | 「推送到采集入库通道」 | 步骤 4（既不是码、也不是类型） | `channelName=采集入库` 模糊查列表，取 `rows[].channelCode` |
 
@@ -573,9 +593,9 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/member
 
 | 接口 | 预期失败 `message` | 触发条件                                               |
 |---|---|----------------------------------------------------|
-| 全部写接口 | `通道不存在` | token 对应的通道已被删除（五个 member/channel 接口都先做这一步）        |
+| 全部写接口 | `通道不存在` | 令牌对应的通道已被删除（五个 member/channel 接口都先做这一步）        |
 | `member/edit` | `channelMemberRelId 参数缺失或非法` | 未传或不是整数                                            |
-| `member/edit` | `nickname 参数缺失或为空` | 未传或全是空白（`.trim()` 后为空即算缺失）                         |
+| `member/edit` | `nickname 参数缺失或为空` | 未传，或去掉前后空白后为空                         |
 | `channel/add` | `channelName/pushType 参数缺失或非法` | 任一缺失（空白 `channelName` 同样算缺失）                       |
 | `channel/edit` | `channelCode 参数缺失或非法` / `通道不存在` / `只能修改同组通道` | 依次发生；`status` 不是 `0` / `1` 时同样按参数错误返回，非数字则直接抛解析异常        |
 | `channel/deleteChannel` | `channelCode 参数缺失或非法` → `不能删除当前应用绑定的通道` → `通道不存在` → `只能删除同组通道` | 注意**先**判自身再判存在/同组                                  |
@@ -589,13 +609,13 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/member
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 401 / `invalid_token` | token 已过期 | 重新调用 `get_access_token` 后重试 |
+| 401 / `invalid_token` | 令牌已过期 | 重新调用 `get_access_token` 后重试 |
 | `Requested scope is out of the client's registered scopes` | 申请的 scope 超出通道客户端登记范围 | 去掉该 scope，或在控制台给该客户端补登记 |
 | 非 0 业务码 + 空 `data` | 通道不存在/无权限/参数非法 | 按返回的 `message` 提示处理，不要重试同一份参数 |
 | 分页返回空 `rows` | 该通道暂无数据，或 `page` 超出总页数 | 先 `total` 校验页数再翻页 |
 | 「XXX 参数缺失或非法」 | 必填参数没传或不是数字/不是整数 | 核对参数名与类型；这类响应是刻意的业务码，不是 500 |
-| 「channelCode 参数缺失或非法」 | 未提供，或长度不是 32 位 | 传 `channel/list` 返回的 `channelCode`（32 位字符串，不是雪花 Long） |
+| 「channelCode 参数缺失或非法」 | 未提供，或长度不是 32 位 | 传 `channel/list` 返回的 `channelCode`（32 位十六进制字符串，不是数字 ID） |
 | 「通道不存在」 | 目标已删除，或该通道码不属于该组 | 重新拉一次列表 |
 | 「只能修改/删除/重置同组通道」 | 目标通道与当前凭证通道 `pid` 不同 | 选同一父通道下的 `channelCode` |
-| 「不能删除当前应用绑定的通道」 | 试图删除 token 所属的通道 | 换通道先换凭证；当前通道不能自删（**仅删除有此保护**） |
+| 「不能删除当前应用绑定的通道」 | 试图删除令牌所属的通道 | 换通道先换凭证；当前通道不能自删（**仅删除有此保护**） |
 | 重置后推送全部失败 | 旧通道码已失效，且服务端不会拦自己重置自己 | 用返回的新通道码替换客户端 Header 中的 `X-Push-Channel-Code`；这一步漏了，后续所有推送都以鉴权失败告终 |
