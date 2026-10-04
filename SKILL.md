@@ -12,7 +12,7 @@ description: Send push notifications to users via the push server MCP, push one 
 description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码），并可用 OAuth2 HTTP 接口查询历史消息。当需要向用户IM客户端、浏览器或webhook API发送 Markdown/json 格式的重要通知、批量采集需要按来源逐条推送、或需要拉取/查看已推送消息时使用本技能。（标题 + Markdown/json 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
 description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, and read back message history over OAuth2 HTTP APIs. Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, or when past pushed messages need to be listed or opened. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
 category: utilities
-version: 1.5.2
+version: 1.5.3
 author: teakong
 ---
 
@@ -110,7 +110,9 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 ## ping 里的示例通道（可借用，但要打招呼）
 
-健康自检 `/services/public/ping` 是**匿名**端点，除了存活结论还会返回一段 `rows`——服务端维护的**公开示例通道**（字段含义同 `channel/list` 的 `rows[]`，响应样例见 [references/api.md](references/api.md) 第 3 节）。列表可能为空。
+健康自检 `/services/public/ping` 是**匿名**端点，除了存活结论还会返回一段 `rows`——服务端维护的**公开示例通道**（字段含义同 `channel/list` 的 `rows[]`，同样带 `pushUrl` / `qrCodeUrl` / `channelMemberRelId`；响应样例见 [references/api.md](references/api.md) 第 3 节）。列表可能为空。
+
+其中两个地址字段可直接用：`pushUrl` 用浏览器打开就是**该通道的推送记录页面**；`qrCodeUrl` 是同一页面的**二维码**，扫码即可用手机打开它。想给用户一个"在哪看消息"的入口时优先用这两个字段，不要自己拼 URL。
 
 如需测试推送，**不要**把返回的 `channelCode` 写进 MCP 配置，只允许通过 `send_push_message` / `send_multi_message` 的 `channelCode` 参数传它。
 

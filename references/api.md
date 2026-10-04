@@ -6,7 +6,7 @@
 
 | # | Method | Path | 鉴权 | 成功时 `data` | 用户会怎么说（示例话术） |
 |---|---|---|---|---|---|
-| 1 | GET | `/services/public/ping` | 无 | `{status:"alive",service:"push-server"}` | 「推送失败了，帮我看看 push-server 还活着吗？」 |
+| 1 | GET | `/services/public/ping` | 无 | `{status:"alive",service:"push-server",rows:[...]}`（`rows` 为公开示例通道） | 「推送失败了，帮我看看 push-server 还活着吗？」 |
 | 2 | GET | `/oauth2/push/message/page` | Bearer | 分页对象：`current` / `total` / `totalPage` / `rows` | 「查一下最近推过哪些消息」「把第 2 页的推送记录列出来」 |
 | 3 | GET | `/oauth2/push/message/detail` | Bearer | 单条消息对象（含 `viewCount`） | 「这条消息的正文是什么？」「那条通知有人看过吗？」 |
 | 4 | GET | `/oauth2/push/channel/list` | Bearer | 父通道信息 + `rows`（无分页） | 「请查看 push-server 当前有哪些通道？」「我有没有浏览器通道？」 |
@@ -93,19 +93,26 @@ curl -s https://www.phprm.com/services/public/ping
 {
   "code": 0,
   "message": "ok",
-  "trace": "6f4d1f41d43c4c1e8d2e15a4f8c85d70",
+  "trace": "27b530cb0c4d4a6cbb66699b7ca42f8e",
   "data": {
     "status": "alive",
     "service": "push-server",
     "rows": [
       {
-        "channelId": "1304170050458501120",
-        "channelName": "测试通道",
+        "channelName": "在线体验",
         "pushType": 1,
         "pushTypeName": "website",
         "pushTypeDesc": "浏览器",
         "channelCode": "4d05f4abdb0a0c2a0269900809946903",
-        "createTime": "2026-08-24 20:26:19"
+        "createTime": "2023-11-08 19:46:10",
+        "webhookUrl": "",
+        "signSecret": "",
+        "status": 1,
+        "channelMemberRelId": "1304170050492055552",
+        "userId": "26990080",
+        "nickname": "一封传话",
+        "pushUrl": "https://www.phprm.com/services/u/1304170050458501120/9wpdp65a4ef4",
+        "qrCodeUrl": "https://www.phprm.com/services/qr/c/1304170050458501120/9wpdp65a4ef4"
       }
     ]
   }
@@ -117,8 +124,9 @@ curl -s https://www.phprm.com/services/public/ping
 | `code` / `message` | 固定 `0` / `ok` |
 | `trace` | 本次请求的追踪 ID，排查时把它报给服务端即可，无需解析 |
 | `data.status` / `data.service` | 固定 `alive` / `push-server` |
-| `data.rows[].channelId` | 通道自增 ID，`rows[]` 一定会带这个字段（注意别和 `channelCode` 搞混：前者是内部 ID，后者才是推送凭证） |
-| `data.rows[]` | **服务端预置的公开示例通道**，字段与 5.1 的 `rows[]` 对齐（只保留必要字段）；列表中只保留**当前仍然可用**的通道，内容可能随时间变化，也可能为空 |
+| `data.rows[]` | **服务端预置的公开示例通道**，字段与 5.1 的 `rows[]` 一致（含 `pushUrl` / `qrCodeUrl` / `channelMemberRelId`）；列表中只保留**当前仍然可用**的通道，内容可能随时间变化，也可能为空 |
+| `data.rows[].pushUrl` | 该通道的**推送记录页面地址**，浏览器打开即可查看这个通道推过什么（非 website 类型为空） |
+| `data.rows[].qrCodeUrl` | 上面那个页面的**二维码**，扫码即可用手机打开同一个推送页面（非 website 类型为空）。给用户"在哪看消息"的入口时用这两个字段，不要自己拼 URL |
 
 ⚠️ 通道码即推送凭证，而 `rows[].channelCode` 是**匿名可得**的示范码：任何拿到它的人都能往这些通道推送。因此它们只能用于「用户同意后的链路自测」，绝不能当作某个用户自己的通道，更不要写进 `${PHPRM_CHANNEL_CODE}`。
 
@@ -299,6 +307,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
         "channelCode": "22222222222222222222222222bbbbbb",
         "createTime": "2026-10-01 15:34:10",
         "webhookUrl": "",
+        "signSecret": "",
         "status": 1,
         "channelMemberRelId": 998877665544332211,
         "userId": 831289282843013,
@@ -321,6 +330,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 | `data.rows[].pushTypeDesc`                                     | 推送类型描述（如「浏览器」「webhook推送」）                                                                                                                     |
 | `data.rows[].channelCode`                                      | 该子通道的 32 位通道码：可直接当 MCP 凭证用、**是「当前通道怎么找」的比对依据**、也是 5.3/5.4/5.5 定位目标通道的唯一入参                                                                     |
 | `data.rows[].webhookUrl`                                       | webhook 通道的接收地址，非 webhook 类型为空                                                                                                                |
+| `data.rows[].signSecret`                                      | 钉钉 / 企业微信 / 飞书群机器人的加签 Secret，未启用加签或非这三类群机器人时为空                                                                                                  |
 | `data.rows[].status`                                           | 通道状态（`1` 已启用 / `0` 未启用，见 5.8）                                                                                                                 |
 | `data.rows[].channelMemberRelId`                               | **该子通道创建人的成员 ID**，`nickname` 同属这条成员记录；**成员接口入参的唯一来源**，可直接作为 5.6 的入参。**仅 `pushType=1`（浏览器）的子通道有值**，其余为 `null`（顶层 `data` 不带成员字段，也没有成员分页接口可查其它人） |
 | `data.rows[].pushUrl`                                          | website 通道的推送地址，打开即可查看该通道的推送记录，非 website 类型为空                                                                                                   |
@@ -350,7 +360,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 | `channelName` | 是 | 通道名称                                                                     |
 | `pushType`    | 是 | 推送类型编码，见 5.7                                                             |
 | `webhookUrl`  | 否 | 接收地址。`webhook推送`、`企业微信/钉钉/飞书群机器人`、`BARK` 这几类必须是合法 URL；浏览器、组合、官方邮件可留空     |
-| `signSecret`  | 否 | 钉钉/企业微信/飞书群机器人签名。`webhook推送`、`钉钉/飞书群机器人` 如果设置签名可传此字符串长度限制4~255；未设置可留空 |
+| `signSecret`  | 否 | 钉钉 / 企业微信 / 飞书群机器人的加签密钥（加签 Secret）。仅这三类群机器人可传：启用加签时填入，长度 4~255；未启用加签留空，其他推送类型勿传 |
 
 新通道的归属由服务端按当前令牌决定，**不要预先断言它挂在谁下面**（复制的是父通道码还是子通道码、有没有浏览器子通道，结果都不一样）。创建后用 5.1 复核它实际出现在哪一层，取它的 `channelCode` 再往下操作。
 
