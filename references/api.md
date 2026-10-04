@@ -299,29 +299,32 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
         "channelCode": "22222222222222222222222222bbbbbb",
         "createTime": "2026-10-01 15:34:10",
         "webhookUrl": "",
-        "memberCount": 3,
         "status": 1,
         "channelMemberRelId": 998877665544332211,
         "userId": 831289282843013,
-        "nickname": "张三"
+        "nickname": "张三",
+        "pushUrl": "https://push.phprm.com/push/view.html?c=22222222222222222222222222bbbbbb",
+        "qrCodeUrl": "https://push.phprm.com/push/qrcode.html?c=22222222222222222222222222bbbbbb"
       }
     ]
   }
 }
 ```
 
-| 字段 | 说明 |
-|---|---|
-| `code` / `message` | 0 表示成功，其余为业务错误码 / 错误描述 |
-| `data.channelCode` / `channelName` / `pushType` / `createTime` | 父通道（组）信息 |
-| `data.rows[].channelName` | 通道名称 |
-| `data.rows[].pushType` | 推送类型编码，见 5.7 枚举表 |
-| `data.rows[].pushTypeName` | 推送类型标识（枚举名小写，如 `website`、`web_hook_push`） |
-| `data.rows[].pushTypeDesc` | 推送类型描述（如「浏览器」「webhook推送」） |
-| `data.rows[].channelCode` | 该子通道的 32 位通道码：可直接当 MCP 凭证用、**是「当前通道怎么找」的比对依据**、也是 5.3/5.4/5.5 定位目标通道的唯一入参 |
-| `data.rows[].webhookUrl` | webhook 通道的接收地址，非 webhook 类型为空 |
-| `data.rows[].memberCount` / `status` | 成员数 / 通道状态（`1` 已启用 / `0` 未启用，见 5.8） |
-| `data.rows[].channelMemberRelId` | **该子通道创建人的成员 ID**，`nickname` 同属这条成员记录；**成员接口入参的唯一来源**，可直接作为 5.6 的入参。**仅 `pushType=1`（浏览器）的子通道有值**，其余为 `null`（顶层 `data` 不带成员字段，也没有成员分页接口可查其它人） |
+| 字段                                                             | 说明                                                                                                                                            |
+|----------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| `code` / `message`                                             | 0 表示成功，其余为业务错误码 / 错误描述                                                                                                                        |
+| `data.channelCode` / `channelName` / `pushType` / `createTime` | 父通道（组）信息                                                                                                                                      |
+| `data.rows[].channelName`                                      | 通道名称                                                                                                                                          |
+| `data.rows[].pushType`                                         | 推送类型编码，见 5.7 枚举表                                                                                                                              |
+| `data.rows[].pushTypeName`                                     | 推送类型标识（枚举名小写，如 `website`、`web_hook_push`）                                                                                                     |
+| `data.rows[].pushTypeDesc`                                     | 推送类型描述（如「浏览器」「webhook推送」）                                                                                                                     |
+| `data.rows[].channelCode`                                      | 该子通道的 32 位通道码：可直接当 MCP 凭证用、**是「当前通道怎么找」的比对依据**、也是 5.3/5.4/5.5 定位目标通道的唯一入参                                                                     |
+| `data.rows[].webhookUrl`                                       | webhook 通道的接收地址，非 webhook 类型为空                                                                                                                |
+| `data.rows[].status`                                           | 通道状态（`1` 已启用 / `0` 未启用，见 5.8）                                                                                                                 |
+| `data.rows[].channelMemberRelId`                               | **该子通道创建人的成员 ID**，`nickname` 同属这条成员记录；**成员接口入参的唯一来源**，可直接作为 5.6 的入参。**仅 `pushType=1`（浏览器）的子通道有值**，其余为 `null`（顶层 `data` 不带成员字段，也没有成员分页接口可查其它人） |
+| `data.rows[].pushUrl`                                          | website 通道的推送地址，打开即可查看该通道的推送记录，非 website 类型为空                                                                                                   |
+| `data.rows[].qrCodeUrl`                                        | website 通道推送地址的二维码，扫码即可在手机上查看推送记录，非 website 类型为空                                                                                                 |
 
 #### 通道码的层级与含义
 
@@ -342,30 +345,31 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 
 > 🚧 **本接口是最后手段，不是首选**。同一个 `pushType` 只需一条通道：先拉 5.1 列表，有同类型且状态正常的通道就**复用**；确实没有才新建，且新建前先向用户说明「为什么还要再开一条」并取得确认。**不要重复创建相同类型的推送通道**——多开不会带来隔离性收益，只会让后续每次推送都要先决定发到哪条。
 
-| 名称 | 必填 | 说明 |
-|---|---|---|
-| `channelName` | 是 | 通道名称 |
-| `pushType` | 是 | 推送类型编码，见 5.7 |
-| `webhookUrl` | 否 | 接收地址。`webhook推送`、`企业微信/钉钉/飞书群机器人`、`BARK` 这几类必须是合法 URL；浏览器、组合、官方邮件可留空 |
+| 名称            | 必填 | 说明                                                                       |
+|---------------|---|--------------------------------------------------------------------------|
+| `channelName` | 是 | 通道名称                                                                     |
+| `pushType`    | 是 | 推送类型编码，见 5.7                                                             |
+| `webhookUrl`  | 否 | 接收地址。`webhook推送`、`企业微信/钉钉/飞书群机器人`、`BARK` 这几类必须是合法 URL；浏览器、组合、官方邮件可留空     |
+| `signSecret`  | 否 | 钉钉/企业微信/飞书群机器人签名。`webhook推送`、`钉钉/飞书群机器人` 如果设置签名可传此字符串长度限制4~255；未设置可留空 |
 
 新通道的归属由服务端按当前令牌决定，**不要预先断言它挂在谁下面**（复制的是父通道码还是子通道码、有没有浏览器子通道，结果都不一样）。创建后用 5.1 复核它实际出现在哪一层，取它的 `channelCode` 再往下操作。
 
 ```bash
 curl --location --request POST "https://www.phprm.com/oauth2/push/channel/add" \
   --header "Authorization: Bearer ${CHANNEL_ACCESS_TOKEN}" \
-  --data-urlencode "channelName=告警接收端" \
+  --data-urlencode "channelName=告警webhook接收端" \
   --data-urlencode "pushType=11" \
   --data-urlencode "webhookUrl=https://example.com/hook/push"
 ```
 
-成功响应（`data` 就是新建的通道，字段与 5.1 的 `rows[]` 对齐。`channelMemberRelId` / `memberCount` / `nickname` 建完即查可能为空，需要时再用 5.1 拉一次列表）：
+成功响应（`data` 就是新建的通道，字段与 5.1 的 `rows[]` 对齐：
 
 ```json
 {
   "code": 0,
   "message": "REQUEST_SUCCESS",
   "data": {
-    "channelName": "告警接收端",
+    "channelName": "告警webhook接收端",
     "pushType": 11,
     "pushTypeName": "web_hook_push",
     "pushTypeDesc": "webhook推送",
@@ -378,7 +382,7 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/add" \
 }
 ```
 
-取 `data.channelCode` 即可作为新的 MCP 凭证；想确认它挂在顶层还是 `rows[]` 里，再用 5.1 复核一次。
+仅新增浏览器类型通道时返回 `data.channelMemberRelId` 和 `data.nickname` , 可以取 `data.channelCode` 指定子通道进行推送, 不过仍然建议使用MCP 凭证或者5.1通道列表顶层channelCode的父通道码推送到所有子通道。
 
 ### 5.3 修改通道
 
@@ -493,10 +497,10 @@ curl --location --request POST "https://www.phprm.com/oauth2/push/channel/resetC
 
 `POST https://www.phprm.com/oauth2/push/channel/member/edit`
 
-| 名称 | 必填 | 说明 |
-|---|---|---|
-| `channelMemberRelId` | 是 | 成员 ID，只能取自 5.1 `data.rows[].channelMemberRelId`（子通道创建人） |
-| `nickname` | 是 | 新昵称；空白串视为缺失，返回参数错误。服务端限制最长 16 个字符 |
+| 名称 | 必填 | 说明                                                                        |
+|---|---|---------------------------------------------------------------------------|
+| `channelMemberRelId` | 是 | 成员 ID，只能取自 5.1 `data.rows[].channelMemberRelId`（子通道创建人, 目前仅支持修改浏览器通道成员昵称） |
+| `nickname` | 是 | 新昵称；空白串视为缺失，返回参数错误。服务端限制最长 16 个字符                                         |
 
 ```bash
 curl --location --request POST "https://www.phprm.com/oauth2/push/channel/member/edit" \

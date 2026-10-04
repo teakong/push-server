@@ -12,7 +12,7 @@ description: Send push notifications to users via the push server MCP, push one 
 description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码），并可用 OAuth2 HTTP 接口查询历史消息。当需要向用户IM客户端、浏览器或webhook API发送 Markdown/json 格式的重要通知、批量采集需要按来源逐条推送、或需要拉取/查看已推送消息时使用本技能。（标题 + Markdown/json 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
 description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, and read back message history over OAuth2 HTTP APIs. Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, or when past pushed messages need to be listed or opened. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
 category: utilities
-version: 1.5.1
+version: 1.5.2
 author: teakong
 ---
 
@@ -139,8 +139,8 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 | 健康自检（匿名） | GET | `/services/public/ping` | 无                                                    | `{status,service,rows}`（`rows` 为示例通道，见「ping 里的示例通道」） |
 | 消息分页 | GET | `/oauth2/push/message/page` | `page`、`limit`（缺省 1 / 10）                            | `current`/`total`/`totalPage`/`rows` |
 | 消息详情 | GET | `/oauth2/push/message/detail` | `messageId`（取自分页）                                    | 单条消息 + `viewCount` |
-| 通道列表 | GET | `/oauth2/push/channel/list` | 可选筛选：`channelName`（模糊）、`pushTypeName`（推送方式）          | 顶层父通道信息 + `rows` |
-| 新增通道 | POST | `/oauth2/push/channel/add` | `channelName` + `pushType` 必填，其余按类型                  | **新建的通道对象**（字段同通道列表 `rows[]`，`channelMemberRelId` 可能为空） |
+| 通道列表 | GET | `/oauth2/push/channel/list` | 可选筛选：`channelName`（模糊）、`pushTypeName`（推送方式）          | 顶层父通道信息 + `rows`（浏览器子通道另带 `pushUrl` / `qrCodeUrl`） |
+| 新增通道 | POST | `/oauth2/push/channel/add` | `channelName` + `pushType` 必填，`webhookUrl` / `signSecret` 按类型可选      | **新建的通道对象**（字段同通道列表 `rows[]`，仅浏览器类型带 `channelMemberRelId` / `nickname`） |
 | 修改通道 | POST | `/oauth2/push/channel/edit` | `channelCode` + 要改的字段，含可选 **`status`（`1` 启用 / `0` 停用）** | `true` |
 | 删除通道 | POST | `/oauth2/push/channel/deleteChannel` | `channelCode`                                        | `true` |
 | 重置通道 | POST | `/oauth2/push/channel/resetChannel` | `channelCode`                                        | **新的通道码字符串** |
