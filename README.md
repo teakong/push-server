@@ -203,7 +203,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list" \
   --header "Authorization: Bearer ${CHANNEL_ACCESS_TOKEN}"
 ```
 
-返回的 `data.rows[].channelCode` 可直接当新的 MCP 推送凭证；同一份响应里 `pushType=1`（浏览器）那几行还带 `channelMemberRelId`，即**该子通道创建人的成员 ID**，是改昵称这个唯一成员接口的**入参来源**（没有成员分页接口，也没有删除成员接口），并额外返回 `pushUrl`（浏览器打开即该通道的推送页面）与 `qrCodeUrl`（同一页面的二维码，扫码用手机打开）。此外还有通道新增/修改/删除/重置与改昵称共 5 个接口，参数与约束见 [references/api.md](references/api.md)；新增通道除 `channelName` / `pushType` 外，群机器人类可传 `signSecret` 签名。其中「新增通道」是最后手段：先在上面的列表里找同 `pushType` 的现有通道复用，确实没有再新建。
+返回的 `data.rows[].channelCode` 可直接当新的 MCP 推送凭证；同一份响应里 `pushType=1`（浏览器）那几行还带 `channelMemberRelId`，即**该子通道创建人的成员 ID**，是改昵称这个唯一成员接口的**入参来源**（没有成员分页接口，也没有删除成员接口），并额外返回 `pushUrl`（浏览器打开即该通道的分享/管理页面）与 `qrCodeUrl`（推送记录页面的二维码，扫码用手机查看推送记录）。此外还有通道新增/修改/删除/重置与改昵称共 5 个接口，参数与约束见 [references/api.md](references/api.md)；新增通道除 `channelName` / `pushType` 外，群机器人类可传 `signSecret` 签名。其中「新增通道」是最后手段：先在上面的列表里找同 `pushType` 的现有通道复用，确实没有再新建。
 
 > ⚠️ 删除通道不可恢复（服务端禁止删除当前凭证绑定的通道，`${PHPRM_CHANNEL_CODE}` 对应的那条永远别删）；重置通道会**立即作废旧通道码**。
 > 重置自己的通道是允许的（这也是轮换凭证的唯一途径），但重置后必须：把新码告诉用户 → 自己尝试替换 MCP 配置里的 `X-Push-Channel-Code` → 提醒重连 → 发一条推送验证。重置别人（同组子通道）不用动 Header。

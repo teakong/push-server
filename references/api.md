@@ -111,7 +111,7 @@ curl -s https://www.phprm.com/services/public/ping
         "channelMemberRelId": "1304170050492055552",
         "userId": "26990080",
         "nickname": "一封传话",
-        "pushUrl": "https://www.phprm.com/services/u/1304170050458501120/9wpdp65a4ef4",
+        "pushUrl": "https://push.phprm.com/message/share.html?channelCode=4d05f4abdb0a0c2a0269900809946903",
         "qrCodeUrl": "https://www.phprm.com/services/qr/c/1304170050458501120/9wpdp65a4ef4"
       }
     ]
@@ -125,8 +125,8 @@ curl -s https://www.phprm.com/services/public/ping
 | `trace` | 本次请求的追踪 ID，排查时把它报给服务端即可，无需解析 |
 | `data.status` / `data.service` | 固定 `alive` / `push-server` |
 | `data.rows[]` | **服务端预置的公开示例通道**，字段与 5.1 的 `rows[]` 一致（含 `pushUrl` / `qrCodeUrl` / `channelMemberRelId`）；列表中只保留**当前仍然可用**的通道，内容可能随时间变化，也可能为空 |
-| `data.rows[].pushUrl` | 该通道的**推送记录页面地址**，浏览器打开即可查看这个通道推过什么（非 website 类型为空） |
-| `data.rows[].qrCodeUrl` | 上面那个页面的**二维码**，扫码即可用手机打开同一个推送页面（非 website 类型为空）。给用户"在哪看消息"的入口时用这两个字段，不要自己拼 URL |
+| `data.rows[].pushUrl` | 该通道的**分享/管理页面地址**（share.html），浏览器打开即可查看与管理该通道（非 website 类型为空） |
+| `data.rows[].qrCodeUrl` | **推送记录页面**的二维码，扫码即可在手机上查看该通道的推送记录（非 website 类型为空）。给用户"在哪看消息"的入口时用这两个字段，不要自己拼 URL |
 
 ⚠️ 通道码即推送凭证，而 `rows[].channelCode` 是**匿名可得**的示范码：任何拿到它的人都能往这些通道推送。因此它们只能用于「用户同意后的链路自测」，绝不能当作某个用户自己的通道，更不要写进 `${PHPRM_CHANNEL_CODE}`。
 
@@ -312,7 +312,7 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
         "channelMemberRelId": 998877665544332211,
         "userId": 831289282843013,
         "nickname": "张三",
-        "pushUrl": "https://push.phprm.com/push/view.html?c=22222222222222222222222222bbbbbb",
+        "pushUrl": "https://push.phprm.com/message/share.html?channelCode=22222222222222222222222222bbbbbb",
         "qrCodeUrl": "https://push.phprm.com/push/qrcode.html?c=22222222222222222222222222bbbbbb"
       }
     ]
@@ -333,8 +333,8 @@ curl --location "https://www.phprm.com/oauth2/push/channel/list?pushTypeName=web
 | `data.rows[].signSecret`                                      | 钉钉 / 企业微信 / 飞书群机器人的加签 Secret，未启用加签或非这三类群机器人时为空                                                                                                  |
 | `data.rows[].status`                                           | 通道状态（`1` 已启用 / `0` 未启用，见 5.8）                                                                                                                 |
 | `data.rows[].channelMemberRelId`                               | **该子通道创建人的成员 ID**，`nickname` 同属这条成员记录；**成员接口入参的唯一来源**，可直接作为 5.6 的入参。**仅 `pushType=1`（浏览器）的子通道有值**，其余为 `null`（顶层 `data` 不带成员字段，也没有成员分页接口可查其它人） |
-| `data.rows[].pushUrl`                                          | website 通道的推送地址，打开即可查看该通道的推送记录，非 website 类型为空                                                                                                   |
-| `data.rows[].qrCodeUrl`                                        | website 通道推送地址的二维码，扫码即可在手机上查看推送记录，非 website 类型为空                                                                                                 |
+| `data.rows[].pushUrl`                                          | website 通道的分享/管理页面地址（share.html），打开即可查看与管理该通道，非 website 类型为空                                                                                                   |
+| `data.rows[].qrCodeUrl`                                        | **推送记录页面**的二维码，扫码即可在手机上查看推送记录，非 website 类型为空                                                                                                 |
 
 #### 通道码的层级与含义
 
