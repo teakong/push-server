@@ -12,7 +12,7 @@ description: Send push notifications to users via the push server MCP, push one 
 description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码），并可用 OAuth2 HTTP 接口查询历史消息。当需要向用户IM客户端、浏览器或webhook API发送 Markdown/json 格式的重要通知、批量采集需要按来源逐条推送、或需要拉取/查看已推送消息时使用本技能。（标题 + Markdown/json 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
 description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, and read back message history over OAuth2 HTTP APIs. Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, or when past pushed messages need to be listed or opened. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
 category: utilities
-version: 1.5.4
+version: 1.6.0
 author: teakong
 ---
 
@@ -32,9 +32,12 @@ author: teakong
 
 推送工具与 `get_access_token` 都只认 `X-Push-Channel-Code`（长期通道码）；HTTP 业务接口只认 `Authorization: Bearer <access_token>`。**通道码不能当 Bearer 用，令牌也不能拿去推送。**
 
+> 另有 `create_auth_session` / `poll_auth_session` 两个工具**不需要通道码**，专给「还没通道码的用户」免注册开通道，用法见「免注册获取通道码」。上面的「三个工具」分工表不含它们——那三个是要凭证的正常链路工具。
+
 ## 何时调用
 
 - 当用户明确要求发送通知或汇报执行结果时。
+- 用户**还没有通道码、又不想去官网注册**时 → 用 `create_auth_session` + `poll_auth_session` 让 Agent 免注册开通一条本人通道，详见「免注册获取通道码」。
 - 用户**明确要求分开推**时（「分别推送」「分开推送」「每个 X 单独推一条」「一条一条发」「这个单独发我」）→ `send_multi_message`，照做。**不要替用户合并成一条。**
 - **批量采集**时（一批并列结果每条各推一条，如「批量采集这 20 个页面」），或需要把结果同时推送到不同通道（不同通道码）时 → `send_multi_message`。
 - 用户要求「整理成表格」「做成报告」「汇总给我」时 → **单条 `send_push_message`，body 写 Markdown 表格**。表格是用来横向对比的，拆成多条就废了。
@@ -58,7 +61,7 @@ author: teakong
 
 **安装 skill ≠ 配置通道**，必须先完成两步，否则无法推送：
 
-1. 在 [一封传话](https://push.phprm.com/mcp.html) 注册账号并创建推送通道，获取 32 位通道码。
+1. 在 [一封传话](https://push.phprm.com/mcp.html) 注册账号并创建推送通道，获取 32 位通道码。（还没有账号、不想注册？走下面的「免注册获取通道码」，用 `create_auth_session` / `poll_auth_session` 由 Agent 代开。）
 2. 在 AI 助手中手动添加远程 MCP 服务器（以 Trae CN 为例：AI 侧边对话框右上角「设置 → MCP → + 添加 → 手动添加」，选择 **Streamable HTTP** 类型），填入以下 JSON 并替换通道码：
 
 ```json
@@ -84,7 +87,22 @@ author: teakong
 
 Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加同名 HTTP 服务器即可。配置保存在用户本地客户端，不会进入任何代码仓库。
 
-> **配好了 ≠ 能推送，连上了也不等于凭证生效。** MCP 端点是**匿名可连接**的：即使完全没配 `X-Push-Channel-Code`（或占位符没被客户端解析），客户端照样能连上并列出三个工具。**工具列表出现不能作为凭证有效的证据**，只有真正推送成功才算。这正是「MCP 显示已连接、工具也出来了，一推就报通道码缺失 / 无效」的来源——排查时直接核对 Header 名与通道码是否被真正替换，不要去反复重连服务器。
+> **配好了 ≠ 能推送，连上了也不等于凭证生效。** MCP 端点是**匿名可连接**的：即使完全没配 `X-Push-Channel-Code`（或占位符没被客户端解析），客户端照样能连上并列出 5 个工具（2 个推送 + 1 个令牌 + 2 个免注册）。**工具列表出现不能作为凭证有效的证据**，只有真正推送成功才算。这正是「MCP 显示已连接、工具也出来了，一推就报通道码缺失 / 无效」的来源——排查时直接核对 Header 名与通道码是否被真正替换，不要去反复重连服务器。
+
+## 免注册获取通道码
+
+针对**没有账号、也不想注册官网**的用户，`create_auth_session` + `poll_auth_session` 两个工具可以现场替他开一条**本人**的系统预设通道。核心原则：**授权那一跳只发生在用户浏览器与官网之间，Agent 全程不接触任何第三方令牌**，这两个工具自始至终只回传一封传话自己的通道码。
+
+流程：
+
+1. **先问用户用哪种登录方式**，确认后再调 `create_auth_session(provider=…)`，返回 `sessionId` + `authUrl`（会话 600 秒有效）。
+2. 把 `authUrl` 用系统浏览器打开，或作为可点击链接给用户，让他在浏览器里完成第三方授权。
+3. 用 `sessionId` 轮询 `poll_auth_session`：`pending` 就按返回的 `pollInterval` 继续等；`success` 时服务端已把**只发一次**的本人通道码发回来，立刻把 `channelCode` 写进 `X-Push-Channel-Code`；客户端不会自己写配置时，直接用返回的 `mcpConfig`（它是按 `X-Mcp-Source` 对齐该客户端原生形状的）。
+4. `expired` / `consumed` / `failed` 立即停止，提示重新 `create_auth_session`。
+
+**支持哪些登录方式以 `create_auth_session` 的 `provider` 枚举为准**——即 `tools/list` 返回的 `inputSchema.provider.enum`，服务端可随时扩充。当前四种：`feishu`、`dingtalk`、`gitee`、`github`。新增登录方式时**不必改本文件**，Agent 现场读枚举即可，所以不要把这些值硬编码进你自己的校验逻辑。
+
+**红线**：绝不向用户索要、也不替 Agent 记录或转发任何第三方 `code` / `access_token`；`sessionId` 是一次性的、不携带任何凭证价值，领到通道码后就丢弃，不要留存。
 
 ## 凭证模型
 
@@ -182,7 +200,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 ## 工具参数
 
-三个工具的 `channelCode` 都被远端 schema 列进了 `required`，但服务端描述为「Header 已预置时可省」——**两种语义并存**，严格按 schema 校验的客户端可能在 Header 已生效时仍报缺参。**稳妥做法：始终显式传 `channelCode`**（值与 Header 同源），一次写死就不用再拿模式去猜：
+三个推送与令牌工具的 `channelCode` 都被远端 schema 列进了 `required`，但服务端描述为「Header 已预置时可省」——**两种语义并存**，严格按 schema 校验的客户端可能在 Header 已生效时仍报缺参。**稳妥做法：始终显式传 `channelCode`**（值与 Header 同源），一次写死就不用再拿模式去猜：
 
 - Header 未生效（没配 `${PHPRM_CHANNEL_CODE}`）：**必须显式传 `channelCode`**。
 - Header 已生效但客户端报缺 `channelCode`：把同一串通道码显式填进 `channelCode`（值与 Header 一致），不要为此改配置或换工具。
@@ -231,6 +249,32 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 | `scope` | 否 | 必须是该通道客户端已登记的 scope 的子集；不传则使用服务端默认值 `basic` |
 
 返回里的 `expires_in` 是**秒数**（默认 7200，即 2 小时），据此决定何时需要重取，不要臆测成几分钟。同一张令牌可以在本次任务里连续调用多个业务接口，详见上一节的复用规则。
+
+### create_auth_session
+
+> 给**没有账号、不想注册官网**的用户现场开通一条系统预设通道。**授权那一跳只发生在用户浏览器与官网之间**，Agent 全程不接触任何第三方 `code` / `access_token`，自始至终只回传一封传话自己的通道码。完整流程见上方「免注册获取通道码」。
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `provider` | 是 | 第三方登录方式；以 `tools/list` 返回的 `inputSchema.provider.enum` 为准（当前 `feishu` / `dingtalk` / `gitee` / `github`）。**不要硬编码枚举值**，服务端可随时扩充，Agent 现场读 schema 即可 |
+
+返回 `{ sessionId, authUrl, expiresIn }`（会话默认 600 秒有效）。`authUrl` 用系统浏览器打开，或作为可点击链接给用户，让他在浏览器里完成第三方授权。
+
+### poll_auth_session
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `sessionId` | 是 | 上一步 `create_auth_session` 返回的会话 ID |
+
+按返回的 `pollInterval` 轮询，三种终止态：
+
+| 状态 | 处理 |
+|---|---|
+| `pending` | 按 `pollInterval` 继续轮询 |
+| `success` | 服务端已把**只发一次**的本人通道码发回来。立刻把 `channelCode` 写进 `X-Push-Channel-Code`；客户端不会自己写配置时，直接用返回的 `mcpConfig`（按 `X-Mcp-Source` 对齐该客户端原生形状） |
+| `expired` / `consumed` / `failed` | 立即停止，提示用户重新调 `create_auth_session` |
+
+**红线**：绝不向用户索要、也不替 Agent 记录或转发任何第三方 `code` / `access_token`；`sessionId` 是单次性的、不携带任何凭证价值，领到通道码即丢弃。
 
 ## 内容排版：emoji 可读化
 

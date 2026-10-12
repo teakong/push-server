@@ -87,7 +87,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 ## 用法
 
-安装并配置好 MCP 后，直接让 agent「任务完成后给我推送一条通知」即可。服务端提供三个工具，按用途分工：
+安装并配置好 MCP 后，直接让 agent「任务完成后给我推送一条通知」即可。服务端提供 5 个工具——**3 个正常链路工具**（推送×2 + 令牌×1，按用途分工如下表）和 **2 个免注册工具**（`create_auth_session` / `poll_auth_session`，无通道码也可开通本人通道，详见下方「免注册开通通道」）：
 
 | 工具 | 用途 |
 |------|------|
@@ -95,7 +95,7 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 | `send_multi_message` | 一次调用推送多条（1~32），每条可指定自己的通道码 |
 | `get_access_token` | 用通道码换短期 `access_token`，供 `/oauth2/push/*` 业务接口使用；返回里有 `expires_in`（默认 7200 秒） |
 
-> 三个工具的 `channelCode` 在远端 schema 里都标了必填，但服务端允许 Header 已预置时省略：Header 未配置时必须显式传；Header 已配置、客户端却仍报缺参时，把同一串通道码显式填进 `channelCode` 即可（值与 Header 一致，不要改配置或换工具）。
+> 这三个工具的 `channelCode` 在远端 schema 里都标了必填，但服务端允许 Header 已预置时省略：Header 未配置时必须显式传；Header 已配置、客户端却仍报缺参时，把同一串通道码显式填进 `channelCode` 即可（值与 Header 一致，不要改配置或换工具）。
 
 **推送单条 —— `send_push_message`**
 
@@ -125,6 +125,15 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 |------|------|------|
 | `channelCode` | 条件必填 | 要换令牌的通道码；不传则取 Header `X-Push-Channel-Code`（schema 同样标了必填） |
 | `scope` | 否 | 必须是该通道客户端已登记 scope 的子集；不传则使用服务端默认值 `basic` |
+
+**免注册开通通道（`create_auth_session` + `poll_auth_session`）**
+
+适用于**没账号、不想注册官网**的用户。Agent 现场替他开一条本人系统预设通道，**授权那一跳只在用户浏览器与官网之间完成**，Agent 全程不接触任何第三方 `code` / `access_token`，最终只回传一封传话自己的通道码。
+
+1. 调 `create_auth_session(provider=…)`，**先问用户用哪种登录方式**（`feishu` / `dingtalk` / `gitee` / `github`，以 `tools/list` 返回的 `inputSchema.provider.enum` 为准，不要硬编码）。返回 `sessionId` + `authUrl`（会话 600 秒有效）。
+2. 把 `authUrl` 用系统浏览器打开或作为可点击链接给用户，让他在浏览器里完成第三方授权。
+3. 用 `sessionId` 轮询 `poll_auth_session`：`pending` 就按 `pollInterval` 继续等；`success` 时把**只发一次**的本人通道码写进 `X-Push-Channel-Code`（客户端不会自己写配置时直接用返回的 `mcpConfig`）；`expired` / `consumed` / `failed` 立即停止，提示重新 `create_auth_session`。
+4. **红线**：绝不向用户索要、也不替 Agent 记录或转发任何第三方 `code` / `access_token`；`sessionId` 是单次性的，领到通道码即丢弃。
 
 **先看这条消息给谁。** 第一类是结构化数据落到你自己的业务系统（商业入库链路），第二类是给人看的通知。
 
