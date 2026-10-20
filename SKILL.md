@@ -4,16 +4,17 @@ slug: push-server
 displayName: 一封传话推送
 display_name: 一封传话推送
 display_name_en: Aggregated Push
-summary: 通过 push server MCP 向用户推送通知（批量采集时可一次推多条webhook）并用短期令牌回查消息
+summary: 通过 push server MCP 向用户推送通知（批量采集时可一次推多条 webhook）、用短期令牌回查消息，并支持免注册开通本人通道（飞书/钉钉/GitHub/Gitee/邮箱授权）
 homepage: https://push.phprm.com/mcp.html
 tags: [push, notification, mcp, webhook]
 license: MIT
-description: Send push notifications to users via the push server MCP, push one message per source of a batch collection with send_multi_message, query pushed messages through OAuth2 HTTP APIs, or onboard a personal channel without registration via create_auth_session + poll_auth_session (Gitee / GitHub / Feishu / DingTalk login). Use this skill when a task result must be reported, an important Markdown/JSON notification must reach the user's IM client, browser or webhook API, a batch collection must fan out to one message per source, pushed messages need to be listed or opened, channels need managing, or the user has no channel yet and needs a registration-free onboarding. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
-description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码）、用 OAuth2 HTTP 接口查询历史消息，并可经 create_auth_session + poll_auth_session 免注册开通本人通道（Gitee / GitHub / 飞书 / 钉钉 登录授权）。当需要向用户 IM 客户端、浏览器或 webhook API 发送 Markdown/JSON 格式的重要通知、批量采集需按来源逐条推送、需拉取/查看已推送消息、或要免注册开通道时使用本技能。（标题 + Markdown/JSON 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
-description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, read back message history over OAuth2 HTTP APIs, or onboard a personal channel registration-free via create_auth_session + poll_auth_session (Gitee / GitHub / Feishu / DingTalk login). Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, when past pushed messages need to be listed or opened, or when a user with no channel yet needs to be onboarded without registering on the website. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
+description: Send push notifications to users via the push server MCP, push one message per source of a batch collection with send_multi_message, query pushed messages through OAuth2 HTTP APIs, or onboard a personal channel without registration via create_auth_session + poll_auth_session (Gitee / GitHub / Feishu / DingTalk login, or an email verification code). Use this skill when a task result must be reported, an important Markdown/JSON notification must reach the user's IM client, browser or webhook API, a batch collection must fan out to one message per source, pushed messages need to be listed or opened, channels need managing, or the user has no channel yet and needs a registration-free onboarding. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
+description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码）、用 OAuth2 HTTP 接口查询历史消息，并可经 create_auth_session + poll_auth_session 免注册开通本人通道（Gitee / GitHub / 飞书 / 钉钉 登录授权，或邮箱验证码）。当需要向用户 IM 客户端、浏览器或 webhook API 发送 Markdown/JSON 格式的重要通知、批量采集需按来源逐条推送、需拉取/查看已推送消息、或要免注册开通道时使用本技能。（标题 + Markdown/JSON 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
+description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, read back message history over OAuth2 HTTP APIs, or onboard a personal channel registration-free via create_auth_session + poll_auth_session (Gitee / GitHub / Feishu / DingTalk login, or an email verification code). Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, when past pushed messages need to be listed or opened, or when a user with no channel yet needs to be onboarded without registering on the website. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
 category: utilities
-version: 1.6.3
+version: 1.6.4
 author: teakong
+icon: icon.png
 ---
 
 # 一封传话推送
@@ -84,11 +85,13 @@ author: teakong
 
 给没账号、不想注册官网的用户，`create_auth_session` + `poll_auth_session` 两个工具现场开一条**本人**系统预设通道。**授权只发生在用户浏览器与官网之间，Agent 全程不碰任何第三方 code/token，只回传一封传话自己的通道码。**
 
-流程：1) 先问登录方式，调 `create_auth_session(provider=…)` 得 `sessionId`+`authUrl`（600 秒有效）；2) 用浏览器打开 `authUrl` 完成第三方授权；3) 用 `sessionId` 轮询 `poll_auth_session`：`pending` 按 `pollInterval` 等，`success` 时把返回的 `channelCode` 写入 `X-Push-Channel-Code`（客户端不自动写时用返回的 `mcpConfig`），`expired`/`consumed`/`failed` 立即停止重开。
+流程：1) 先问登录方式，调 `create_auth_session(provider=…)` 得 `sessionId`+`authUrl`（600 秒有效）；2) 用系统浏览器打开 `authUrl`，完成第三方授权；3) 用 `sessionId` 轮询 `poll_auth_session`：`pending` 按 `pollInterval` 等，`success` 时把返回的 `channelCode` 写入 `X-Push-Channel-Code`（客户端不自动写时用返回的 `mcpConfig`），`expired`/`consumed`/`failed` 立即停止重开。
 
-`provider` 枚举以 `tools/list` 返回的 `inputSchema.provider.enum` 为准（当前 `feishu`/`dingtalk`/`gitee`/`github`，服务端可扩，勿硬编码校验）。
+`provider` 枚举以 `tools/list` 返回的 `inputSchema.provider.enum` 为准（当前 `feishu`/`dingtalk`/`gitee`/`github`/`email`，服务端可扩，勿硬编码校验）。
 
-**红线**：绝不索要、记录或转发任何第三方 code/access_token；`sessionId` 一次性、无凭证价值，领码即弃。
+**邮箱验证码（`provider=email`）**：用户没有三方账号、也不想注册时的兜底。额外必填 `email`（收件邮箱）与 `channelCode`（**邮件授权入口通道码**，取自 `/services/public/ping` 的 `rows[].channelCode`，见「ping 示例通道」；不在名单里或已停用 → 报「邮件授权入口临时关闭，请改用其他通道」）。返回的也是 `authUrl`，与三方登录一样在浏览器里打开、由用户完成验证，之后同样用 `sessionId` 轮询。发信限流：**同一邮箱、同一 IP 各每小时最多 2 封**，被限住时提示用户改用其他登录方式，别重试轰炸。
+
+**红线**：绝不索要、记录或转发任何第三方 code/access_token；`sessionId` 一次性、无凭证价值，领码即弃；邮箱验证码由用户在浏览器里自己填进官网页面，Agent 不经手验证码，也不要把用户邮箱写进推送内容或日志。
 
 ## 凭证模型
 
@@ -119,7 +122,7 @@ author: teakong
 
 | 用途 | Method | Path | 参数 | 成功 `data` |
 |---|---|---|---|---|
-| 健康自检（匿名） | GET | `/services/public/ping` | 无 | `{status,service,rows}``（`rows` 为示例通道，见「ping 里的示例通道」） |
+| 健康自检（匿名） | GET | `/services/public/ping` | 无 | `{status,service,rows}`（`rows` 为示例通道，见「ping 示例通道」） |
 | 消息分页 | GET | `/oauth2/push/message/page` | `page`,`limit`(缺省1/10) | 分页对象 |
 | 消息详情 | GET | `/oauth2/push/message/detail` | `messageId` | 单条+`viewCount` |
 | 通道列表 | GET | `/oauth2/push/channel/list` | `channelName`,`pushTypeName` | 父通道+`rows`（浏览器子通道另带 `pushUrl` / `qrCodeUrl`） |
@@ -177,9 +180,12 @@ author: teakong
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `provider` | 是 | 登录方式，以 `tools/list` 枚举为准（feishu/dingtalk/gitee/github），勿硬编码 |
+| `provider` | 是 | 登录方式，以 `tools/list` 枚举为准（feishu/dingtalk/gitee/github/email），勿硬编码 |
+| `email` | 条件 | 仅 `provider=email` 必填，收件邮箱 |
+| `channelCode` | 条件 | 仅 `provider=email` 必填，邮件授权入口通道码：必须是 `/services/public/ping` 里**已启用**的那几条之一，不是本次要申请的通道码 |
 
-返回 `{ sessionId, authUrl, expiresIn }`（会话默认 600 秒有效）。`authUrl` 用系统浏览器打开，或作为可点击链接给用户，让他在浏览器里完成第三方授权。
+三方登录返回 `{ sessionId, authUrl, expiresIn }`（会话默认 600 秒有效）。`authUrl` 用系统浏览器打开，或作为可点击链接给用户，让他在浏览器里完成第三方授权。
+`provider=email` 返回 `{ sessionId, authUrl, expiresIn }`，形状与三方登录一致，Agent 侧流程完全相同，只是 `authUrl` 指向的是官网页面而不是三方授权页。
 
 ### poll_auth_session
 | 字段 | 必填 | 说明 |

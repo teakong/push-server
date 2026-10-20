@@ -130,10 +130,11 @@ Claude Code、Cursor 等其他客户端同理，在各自的 MCP 配置中添加
 
 适用于**没账号、不想注册官网**的用户。Agent 现场替他开一条本人系统预设通道，**授权那一跳只在用户浏览器与官网之间完成**，Agent 全程不接触任何第三方 `code` / `access_token`，最终只回传一封传话自己的通道码。
 
-1. 调 `create_auth_session(provider=…)`，**先问用户用哪种登录方式**（`feishu` / `dingtalk` / `gitee` / `github`，以 `tools/list` 返回的 `inputSchema.provider.enum` 为准，不要硬编码）。返回 `sessionId` + `authUrl`（会话 600 秒有效）。
+1. 调 `create_auth_session(provider=…)`，**先问用户用哪种登录方式**（`feishu` / `dingtalk` / `gitee` / `github` / `email`，以 `tools/list` 返回的 `inputSchema.provider.enum` 为准，不要硬编码）。返回 `sessionId` + `authUrl`（会话 600 秒有效）。
 2. 把 `authUrl` 用系统浏览器打开或作为可点击链接给用户，让他在浏览器里完成第三方授权。
+   - 选 `email`（用户没有三方账号时的兜底）时另传 `email`（收件邮箱）和 `channelCode`（**邮件授权入口通道码**，必须是 `/services/public/ping` 里已启用的那几条之一，不是本次要申请的码）；返回的也是 `authUrl`，对 agent 的形状与三方登录完全一致，同样在浏览器里打开由用户完成验证。发信按邮箱、按 IP 各限每小时 2 封，被限住就提示改用其他登录方式，别重试。
 3. 用 `sessionId` 轮询 `poll_auth_session`：`pending` 就按 `pollInterval` 继续等；`success` 时把**只发一次**的本人通道码写进 `X-Push-Channel-Code`（客户端不会自己写配置时直接用返回的 `mcpConfig`）；`expired` / `consumed` / `failed` 立即停止，提示重新 `create_auth_session`。
-4. **红线**：绝不向用户索要、也不替 Agent 记录或转发任何第三方 `code` / `access_token`；`sessionId` 是单次性的，领到通道码即丢弃。
+4. **红线**：绝不向用户索要、也不替 Agent 记录或转发任何第三方 `code` / `access_token`；邮箱验证码由用户本人在官网页面里输入，Agent 不经手，也不把用户邮箱写进推送内容或日志；`sessionId` 是单次性的，领到通道码即丢弃。
 
 **先看这条消息给谁。** 第一类是结构化数据落到你自己的业务系统（商业入库链路），第二类是给人看的通知。
 
