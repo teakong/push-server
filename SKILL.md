@@ -12,7 +12,7 @@ description: Send push notifications to users via the push server MCP, push one 
 description_zh: 通过 push server MCP 向用户推送消息通知或将抓取内容推送至业务服务器；支持 send_multi_message 在批量采集时按来源推送多条（可各带自己的通道码）、用 OAuth2 HTTP 接口查询历史消息，并可经 create_auth_session + poll_auth_session 免注册开通本人通道（Gitee / GitHub / 飞书 / 钉钉 登录授权，或邮箱验证码）。当需要向用户 IM 客户端、浏览器或 webhook API 发送 Markdown/JSON 格式的重要通知、批量采集需按来源逐条推送、需拉取/查看已推送消息、或要免注册开通道时使用本技能。（标题 + Markdown/JSON 正文，可选跳转链接；人读消息用 emoji 提升扫读效率）
 description_en: Push message notifications to users through the push server MCP, push scraped content to a business server, fan out several messages of a batch collection via send_multi_message, read back message history over OAuth2 HTTP APIs, or onboard a personal channel registration-free via create_auth_session + poll_auth_session (Gitee / GitHub / Feishu / DingTalk login, or an email verification code). Use this skill when an important notification in Markdown or JSON format must reach the user's IM client, browser, or webhook API, when a batch collection needs one message per source, when past pushed messages need to be listed or opened, or when a user with no channel yet needs to be onboarded without registering on the website. (Head + Markdown/JSON body, optional jump link; emoji formatting rules for human-readable messages.)
 category: utilities
-version: 1.6.4
+version: 1.6.5
 author: teakong
 icon: icon.png
 ---
@@ -38,12 +38,10 @@ icon: icon.png
 
 - 当用户明确要求发送通知或汇报执行结果时。
 - 用户**还没有通道码、又不想去官网注册**时 → 用 `create_auth_session` + `poll_auth_session` 让 Agent 免注册开通一条本人通道，详见「免注册获取通道码」。
-- 用户**明确要求分开推**时（「分别推送」「分开推送」「每个 X 单独推一条」「一条一条发」「这个单独发我」）→ `send_multi_message`，照做。**不要替用户合并成一条。**
-- **批量采集**时（一批并列结果每条各推一条，如「批量采集这 20 个页面」），或需要把结果同时推送到不同通道（不同通道码）时 → `send_multi_message`。
+- 用户**明确要求分开推**时（「分别推送」「分开推送」「每个 X 单独推一条」「一条一条发」「这个单独发我」）→ `send_multi_message`，照做，**不要替用户合并成一条**。**批量采集**（一批并列结果每条各推一条，如「批量采集这 20 个页面」）或需要把结果同时推送到不同通道（不同通道码）时，同样用它。
 - 用户要求「整理成表格」「做成报告」「汇总给我」时 → **单条 `send_push_message`，body 写 Markdown 表格**。表格是用来横向对比的，拆成多条就废了。
 - 需要把采集到的结构化内容以 JSON 推送到用户自己的服务器（webhook 通道）时。
-- 需要列出或打开已推送过消息（分页、详情）时 → 先取令牌，再用 HTTP 接口。
-- 需要管理通道本身时（看下有哪些通道、改成员昵称、新增/修改/删除/重置通道）→ 先取令牌，再用 HTTP 接口，规则详见 [references/api.md](references/api.md)。
+- 需要列出或打开已推送过的消息（分页、详情）、管理通道本身（看有哪些通道、改成员昵称、新增/修改/删除/重置通道）时 → 先取令牌，再用 HTTP 接口，规则详见 [references/api.md](references/api.md)。
 
 ## 参考文件（按需读取）
 
@@ -69,17 +67,43 @@ icon: icon.png
       "url": "https://www.phprm.com/services/push/mcp",
       "headers": {
         "X-Push-Channel-Code": "${PHPRM_CHANNEL_CODE}",
-        "X-Mcp-Source": "trae"
+        "X-Mcp-Source": "workbuddy"
       }
     }
   }
 }
 ```
 
-- **名称**固定 `push-server`；**URL** 如上；**Headers**：`X-Push-Channel-Code` 32 位通道码（必配，否则收不到），`X-Mcp-Source` 客户端标识（可选，如 `trae`/`workbuddy`/`coze`，仅服务端日志区分来源）。
-- **传输类型** Streamable HTTP（非 SSE）。部分客户端需显式 `"type": "streamable-http"`（多数）或 `"streamableHttp"`（WorkBuddy 驼峰），不认该字段就整行删掉。
+- **名称**固定 `push-server`；`X-Push-Channel-Code` 填 32 位通道码（必配，否则收不到），`X-Mcp-Source` 填客户端标识（可选，如 `trae`/`workbuddy`/`coze`，仅服务端日志区分来源）。
 
 > MCP 端点**匿名可连接**：没配通道码也能连上并列出 5 个工具（2 推送 + 1 令牌 + 2 免注册）。**工具列表出现 ≠ 凭证有效**，只有真推送成功才算。排查时直接核对 Header 名与通道码是否被真正替换，别反复重连服务器。
+
+## MCP 没生效时：用 curl 顶上
+
+改配置、写通道码这类动作，**多数客户端要重启（或手动添加服务器）才生效**，当前会话里工具往往还调不动。这时**不要停下来等用户重启**：直接对同一个地址发 JSON-RPC 把任务办完，配置生效后再切回正常工具调用。端点无状态 —— 一次 POST 就回完整 JSON，**不需要先 `initialize`、不用带 `Mcp-Session-Id`**；请求头只带 `Content-Type: application/json`、`Accept: application/json` 和 `X-Push-Channel-Code: <通道码>`（`create_auth_session` / `poll_auth_session` 这一对不带通道码）。
+
+```bash
+curl -sS -X POST "https://www.phprm.com/services/push/mcp" \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -H "X-Push-Channel-Code: ${PHPRM_CHANNEL_CODE}" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_push_message","arguments":{"head":"🎉 任务完成","body":"## 结果\n- ✅ 已处理 128 条"}}}'
+```
+
+- 判成功：`result.isError` 为 `false`，且 `result.content[0].text` 里业务 `code=0`、`data.messageIdList` 非空。缺通道码回 `-32602`，工具名写错回 `-32602 Unknown tool`。
+- 其它工具同理换 `params.name` 与 `arguments`；拿不准入参就先发一次 `{"method":"tools/list"}` 看当前 schema（provider 枚举等都以它为准）。
+- 红线不变：curl 命令里的通道码同样只出现在本机命令与请求头里，不贴进聊天、仓库文件或日志；curl 也不通就如实说没送到，**不得谎称已推送**。
+
+## 服务端提示词（prompts）
+
+远端 `push-server` 在 5 个工具之外还暴露 3 个 MCP 提示词，封装了完整操作话术（含上面的 curl 兜底）。用户点用或你主动调用都行，不用在本地重抄步骤：
+
+| 提示词 | 用途 | 对应本文件章节 |
+|---|---|---|
+| `open_channel` | 免注册开通本人通道：先问登录方式 → `create_auth_session` + `poll_auth_session` | 免注册获取通道码 |
+| `update_channel_code` | 把 32 位通道码写入本机 MCP 配置（按当前客户端格式只改 `X-Push-Channel-Code` 一处） | 配置（用户必读）/ MCP 没生效时 |
+| `push_report` | 把当前任务结果推送给我：结论先行 + emoji + 贴 `pushUrl`/`qrCodeUrl` | 执行步骤 |
+
+调 `prompts/get` 会返回带完整步骤的用户消息，照着执行即可；MCP 一时调不动同样按「MCP 没生效时：用 curl 顶上」先把事办完。
 
 ## 免注册获取通道码
 
@@ -89,7 +113,7 @@ icon: icon.png
 
 `provider` 枚举以 `tools/list` 返回的 `inputSchema.provider.enum` 为准（当前 `feishu`/`dingtalk`/`gitee`/`github`/`email`，服务端可扩，勿硬编码校验）。
 
-**邮箱验证码（`provider=email`）**：用户没有三方账号、也不想注册时的兜底。额外必填 `email`（收件邮箱）与 `channelCode`（**邮件授权入口通道码**，取自 `/services/public/ping` 的 `rows[].channelCode`，见「ping 示例通道」；不在名单里或已停用 → 报「邮件授权入口临时关闭，请改用其他通道」）。返回的也是 `authUrl`，与三方登录一样在浏览器里打开、由用户完成验证，之后同样用 `sessionId` 轮询。发信限流：**同一邮箱、同一 IP 各每小时最多 2 封**，被限住时提示用户改用其他登录方式，别重试轰炸。
+**邮箱验证码（`provider=email`）**：用户没有三方账号、也不想注册时的兜底，流程与三方登录完全一样。额外必填 `email`（收件邮箱）与 `channelCode`（**邮件授权入口通道码**，取自 `/services/public/ping` 的 `rows[].channelCode`，见「ping 示例通道」；不在名单里或已停用 → 报「邮件授权入口临时关闭，请改用其他通道」）。发信限流：**同一邮箱、同一 IP 各每小时最多 2 封**，被限住时提示用户改用其他登录方式，别重试轰炸。
 
 **红线**：绝不索要、记录或转发任何第三方 code/access_token；`sessionId` 一次性、无凭证价值，领码即弃；邮箱验证码由用户在浏览器里自己填进官网页面，Agent 不经手验证码，也不要把用户邮箱写进推送内容或日志。
 
@@ -136,17 +160,18 @@ icon: icon.png
 
 ## 执行步骤
 
-1. **确认通道码**：占位符未解析且用户没给时，向用户索取本人 32 位码，**不猜、不用别人通道码**；拿到后默认显式传 `channelCode`**——远端 schema 把 `channelCode` 列进了 `required`，无条件传可以避免客户端的严格校验卡住这一步（详见「工具参数」）。
+1. **确认通道码**：占位符未解析且用户没给时，向用户索取本人 32 位码，**不猜、不用别人通道码**；拿到后始终显式传 `channelCode`（为什么见「工具参数」）。
 2. **选工具**：默认单条 `send_push_message`。升多条仅三种：用户要分开推 / 批量采集 / 发到不同通道。表格报告走单条 Markdown 表格。显式措辞优先。
 3. **组装**：`head`(≤200 纯文本)、`body`(≤50000，Markdown/JSON)、`url`(≤500)。webhook 入库 → `body` 裸 JSON 零 emoji，字段对齐对方表、带批次号与采集时间；人读 → head 前置结论 emoji，body 用状态灯/结果符排版（见下节）。简单结果可只给 `head`。
 4. **发送前清洗（强制）**：URL 外层反引号会污染接收端 showdown 渲染时的 `href`/`src`，导致链接点不动/图片裂图。逐条把 `body`/`url` 中 `` `https://...` `` 与 `](`https://...`)` 形式都去掉外层反引号。反例 `点[详情](`https://...`)`，正例 `点[详情](https://...)`。反引号只用于文件名/命令/代码标识。
-5. 调用已注册的 `push-server` MCP 工具（本 skill 不是服务器，不能把 skill 名当 server 调）。
+5. 调用已注册的 `push-server` MCP 工具（本 skill 不是服务器，不能把 skill 名当 server 调）。工具调不动、或通道码是刚写进配置还没生效时 → 直接按「MCP 没生效时：用 curl 顶上」用 curl 把这一轮发出去，别停在"等用户重启"。
 6. 成功：`{"code":0,...}` 且 `data.messageIdList` 非空；`send_multi_message` 任一失败即整次失败。
-7. 回看历史推送内容：先 `get_access_token` 再调 [references/api.md](references/api.md) 的分页/详情。
+7. **把 `data.pushUrl` / `data.qrCodeUrl` 展示给用户**（两条推送工具成功时都带）：`pushUrl` 在电脑浏览器打开看这条推送记录，`qrCodeUrl` 用手机扫码看同一份记录。原样贴链接，不要改写、不要自己拼 URL；缺字段（该通道还没有二维码短链）就只贴 `pushUrl`。
+8. 回看历史推送内容：先 `get_access_token` 再调 [references/api.md](references/api.md) 的分页/详情。
 
 ## 工具参数
 
-`channelCode` 远端 schema 标为 `required`、Header 预置时可省——两说并存，严格客户端可能仍报缺参。**始终显式传 `channelCode`**（与 Header 同源）。`body` 支持 Markdown/纯文本/JSON，按字符串原文转发、不在服务端解析（不支持 HTML 是渲染侧约束，非传输侧）。
+`channelCode`：远端 schema 标 `required`、Header 预置时又可省——两说并存，严格客户端可能仍报缺参，所以**始终显式传**（与 Header 同一串）。`body` 支持 Markdown/纯文本/JSON，按字符串原文转发、服务端不解析（不支持 HTML 是渲染侧约束，非传输侧）。
 
 ### send_push_message
 | 字段 | 必填 | 说明 |
@@ -164,7 +189,7 @@ icon: icon.png
 | `messages[].channelCode` | 否 | 该项单独指定通道；不传则用工具级 `channelCode` / Header 通道码 |
 | `channelCode` | 条件必填 | 工具级默认通道；不传则用 Header |
 
-> 任一条失败整次失败；超 32 条拆多次。默认单条，表格报告一律单条。
+> 任一条失败整次失败；超 32 条拆多次。
 
 ### get_access_token
 | 字段 | 必填 | 说明                      |
@@ -176,16 +201,15 @@ icon: icon.png
 
 ### create_auth_session
 
-> **授权仅发生在用户浏览器与官网之间**，Agent 全程不接触第三方 `code`/`access_token`，只回传一封传话自己的通道码。完整流程见「免注册获取通道码」。
+> **授权仅发生在用户浏览器与官网之间**，Agent 不接触任何第三方 `code`/`access_token`。完整流程与红线见「免注册获取通道码」。
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `provider` | 是 | 登录方式，以 `tools/list` 枚举为准（feishu/dingtalk/gitee/github/email），勿硬编码 |
+| `provider` | 是 | 登录方式，枚举以 `tools/list` 为准，勿硬编码 |
 | `email` | 条件 | 仅 `provider=email` 必填，收件邮箱 |
 | `channelCode` | 条件 | 仅 `provider=email` 必填，邮件授权入口通道码：必须是 `/services/public/ping` 里**已启用**的那几条之一，不是本次要申请的通道码 |
 
-三方登录返回 `{ sessionId, authUrl, expiresIn }`（会话默认 600 秒有效）。`authUrl` 用系统浏览器打开，或作为可点击链接给用户，让他在浏览器里完成第三方授权。
-`provider=email` 返回 `{ sessionId, authUrl, expiresIn }`，形状与三方登录一致，Agent 侧流程完全相同，只是 `authUrl` 指向的是官网页面而不是三方授权页。
+三方与 `provider=email` 返回形状一致：`{ sessionId, authUrl, expiresIn }`（会话默认 600 秒有效）。`authUrl` 用系统浏览器打开、或作为可点击链接发给用户，由他在浏览器里完成授权/验证。
 
 ### poll_auth_session
 | 字段 | 必填 | 说明 |
@@ -197,7 +221,7 @@ icon: icon.png
 | 状态 | 处理 |
 |---|---|
 | `pending` | 按 `pollInterval` 继续轮询 |
-| `success` | 服务端已把**只发一次**的本人通道码发回来。立刻把 `channelCode` 写进 `X-Push-Channel-Code`；客户端不会自己写配置时，直接用返回的 `mcpConfig`（按 `X-Mcp-Source` 对齐该客户端原生形状） |
+| `success` | 服务端已把**只发一次**的本人通道码发回来。立刻把 `channelCode` 写进 `X-Push-Channel-Code`；客户端不会自己写配置时，直接用返回的 `mcpConfig`（按 `X-Mcp-Source` 对齐该客户端原生形状）。**写完一般要重启客户端才生效**，空窗期别干等，按「MCP 没生效时：用 curl 顶上」先把推送发出去 |
 | `expired` / `consumed` / `failed` | 立即停止，提示用户重新调 `create_auth_session` |
 
 ## 内容排版：emoji 可读化
@@ -234,8 +258,7 @@ icon: icon.png
 
 ## 成功判定与失败处理
 
-- 成功：`{"code":0,...}` 含 `messageIdList`。
-- MCP 不可用或返回非 `code:0` → 如实告知失败原因；**不得降级为 HTTP 直推，更不得谎称已发送**。
+- 成功判据见「执行步骤」第 6 步；成功后按第 7 步把 `data.pushUrl` / `data.qrCodeUrl` 贴回用户。
 - 排查按错误驱动，正常流程先直接推送；失败（连接层）→ ping（`alive` 则查凭证/配置；失败则查 URL/网络/传输类型）。ping 与消息接口格式见 [references/api.md](references/api.md)，勿高频轮询。
 
 ## 示例
@@ -251,7 +274,7 @@ icon: icon.png
 **任务汇报（含跳转链接）**
 ```json
 { "head": "🎉 代码优化完成",
-  "body": "## ✅ 优化清单\n- ✅ 性能：P95 降 38%\n- ✅ 稳定性：补异常捕获",
+  "body": "## ✅ 优化清单\n- ✅ 性能：P95 降 38%\n- ✅ 稳定性：异常减少",
   "url": "https://example.com/pr/123" }
 ```
 
@@ -260,5 +283,5 @@ icon: icon.png
 **成功响应**
 
 ```json
-{"code": 0, "message": "请求成功", "data": {"messageIdList": ["1680030476695388161"]}}
+{"code": 0, "message": "请求成功", "data": {"messageIdList": ["1680030476695388161"], "pushUrl": "https://push.phprm.com/message/share.html?channelCode=…", "qrCodeUrl": "https://www.phprm.com/services/qr/c/…"}}
 ```
